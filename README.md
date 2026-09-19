@@ -243,6 +243,23 @@ ls ~/.pi/agent/*.bak.* ~/.pi/agent/settings.json.orig   # closest backups of wha
 Removing pi itself (`npm uninstall -g @earendil-works/pi-coding-agent`) leaves `~/.pi/agent/` in
 place — settings, credentials and sessions are yours to keep.
 
+## Improvements needed
+
+Considered, deliberately not built yet.
+
+- **Real isolation instead of a guardrail** — a container/VM path for pi itself (workspace-only mount,
+  no host `~/.pi/agent`, no capabilities), plus Docker Sandboxes / Gondolin / OpenShell. `pi-sandbox`
+  limits blast radius; it is not a security boundary.
+- **Offload the Brave script to a managed skill** — `npx skills add badlogic/pi-skills@brave-search -g -y`
+  installs the upstream skill (by pi's author) into `~/.agents/skills/`, which pi reads, tracked in
+  `~/.agents/.skill-lock.json`, and drops our vendored `brave.mjs`. During research this worked, at the
+  cost of an `npm install` in the skill dir and `BRAVE_API_KEY` instead of the Keychain lookup.
+- **Tune `config/sandbox.json` from real usage** — after a few weeks fold the approvals you actually
+  granted into deliberate defaults, drop the one-off mistakes, and revisit `allowLocalBinding`,
+  `permissionPromptTimeoutSeconds` (600 s is generous) and what belongs in `denyWrite`.
+- **Pin the managed skill** — `npx skills add` tracks `main`; add a version check once upstream tags a
+  release.
+
 ## License
 
 MIT — see [LICENSE](LICENSE).

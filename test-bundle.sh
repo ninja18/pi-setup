@@ -164,7 +164,7 @@ test_dry_run() {
   else
     fail "dry run exited non-zero"
   fi
-  if [ -n "$(find "$AGENT_DIR" -mindepth 1 -print -quit 2>/dev/null)" ]; then
+  if [ -n "$(ls -A "$AGENT_DIR" 2>/dev/null)" ]; then
     fail "dry run wrote files into the agent directory"
   else
     pass "dry run wrote nothing"
