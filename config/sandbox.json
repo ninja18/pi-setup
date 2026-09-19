@@ -1,0 +1,62 @@
+{
+  "enabled": true,
+  "sandboxUserShell": true,
+  "permissionPromptTimeoutSeconds": 600,
+  "allowBrowserProcess": false,
+  "network": {
+    "allowLocalBinding": true,
+    "allowUnauthenticatedSocksProxy": true,
+    "sshProxy": true,
+    "allowedDomains": [
+      "registry.npmjs.org",
+      "*.npmjs.org",
+      "nodejs.org",
+      "github.com",
+      "*.github.com",
+      "api.github.com",
+      "raw.githubusercontent.com",
+      "codeload.github.com",
+      "objects.githubusercontent.com",
+      "api.search.brave.com"
+    ],
+    "deniedDomains": []
+  },
+  "filesystem": {
+    "denyRead": [
+      "~/.ssh",
+      "~/.aws",
+      "~/.gnupg",
+      "~/.config/gh",
+      "~/Library/Keychains"
+    ],
+    "allowRead": [
+      ".",
+      "/tmp",
+      "~/.config",
+      "~/.local",
+      "~/Library",
+      "~/.cache",
+      "~/.npm"
+    ],
+    "allowWrite": [
+      ".",
+      "/tmp",
+      "~/.npm",
+      "~/.cache",
+      "~/Library/Caches"
+    ],
+    "denyWrite": [
+      ".env",
+      ".env.*",
+      "*.pem",
+      "*.key",
+      "~/.ssh",
+      "~/.aws",
+      "~/.gnupg",
+      "~/.config/gh",
+      "~/.pi/agent/auth.json",
+      "~/.pi/agent/settings.json",
+      "~/.pi/agent/sandbox.json"
+    ]
+  }
+}

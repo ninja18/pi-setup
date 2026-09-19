@@ -1,0 +1,342 @@
+#!/usr/bin/env bash
+#
+# Install this pi setup into an agent directory.
+#
+# Safe to re-run: files that differ are backed up as <name>.bak.<timestamp>, and settings.json is
+# MERGED - keys you already set (defaultModel, defaultProvider, ...) survive, while this repo's keys
+# win where they overlap.
+#
+# The agent directory is $PI_CODING_AGENT_DIR, or ~/.pi/agent when that is unset. That is what lets
+# test-bundle.sh install into a scratch directory without touching your real setup.
+set -uo pipefail
+
+# --------------------------------------------------------------------------------------
+# configuration
+# --------------------------------------------------------------------------------------
+
+REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+AGENT_DIR="${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}"
+SANDBOX_PACKAGE="npm:pi-sandbox@0.6.8"
+HERDR_SKILL_TAG="v0.9.0"
+HERDR_SKILL_URL="https://raw.githubusercontent.com/herdrdev/herdr/${HERDR_SKILL_TAG}/skills/herdr/SKILL.md"
+
+DRY_RUN=0
+SHOW_HELP=0
+WARNINGS=0
+ERRORS=0
+
+# --------------------------------------------------------------------------------------
+# output
+# --------------------------------------------------------------------------------------
+
+say() { printf '%s\n' "$*"; }
+step() { printf '\n== %s\n' "$*"; }
+note() { printf '   %s\n' "$*"; }
+ok() { printf '   ok   %s\n' "$*"; }
+
+# Something to look at but not a failed install (a missing optional tool, say).
+warn() {
+  printf '   warn %s\n' "$*"
+  WARNINGS=$((WARNINGS + 1))
+}
+
+# Something that makes the install not work as intended.
+problem() {
+  printf '   FAIL %s\n' "$*"
+  ERRORS=$((ERRORS + 1))
+}
+
+die() {
+  printf 'error: %s\n' "$*" >&2
+  exit 1
+}
+
+usage() {
+  cat <<'USAGE'
+Install this pi setup into an agent directory.
+
+  ./install.sh              apply
+  ./install.sh --dry-run    show what would change, touch nothing
+  ./install.sh --help       this text
+
+Reads the agent directory from $PI_CODING_AGENT_DIR (default ~/.pi/agent).
+USAGE
+}
+
+# --------------------------------------------------------------------------------------
+# helpers
+# --------------------------------------------------------------------------------------
+
+have() { command -v "$1" >/dev/null 2>&1; }
+
+# Run a command, or print it when --dry-run is set.
+run() {
+  if [ "$DRY_RUN" = 1 ]; then
+    printf '   [dry-run] %s\n' "$*"
+  else
+    "$@"
+  fi
+}
+
+# Copy a file into the agent dir, backing up whatever was there first.
+install_file() { # <source> <target>
+  local source="$1" target="$2"
+  if [ -f "$target" ] && ! diff -q "$source" "$target" >/dev/null 2>&1; then
+    run cp "$target" "$target.bak.$(date +%Y%m%d%H%M%S)"
+    note "backed up the existing $(basename "$target")"
+  fi
+  run cp "$source" "$target"
+}
+
+# Version of an installed pi package, or nothing when it is not on disk.
+package_version() { # <package dir>
+  local manifest="$1/package.json"
+  [ -f "$manifest" ] || return 1
+  python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["version"])' "$manifest" 2>/dev/null
+}
+
+is_valid_json() { python3 -c 'import json,sys; json.load(open(sys.argv[1]))' "$1" >/dev/null 2>&1; }
+
+file_size() { wc -c <"$1" | tr -d ' '; }
+
+# --------------------------------------------------------------------------------------
+# steps
+# --------------------------------------------------------------------------------------
+
+preflight() {
+  step "Preflight"
+
+  have pi || die "pi is not on PATH. Install it first:
+       npm install -g --ignore-scripts @earendil-works/pi-coding-agent"
+  have python3 || die "python3 is required by this installer."
+
+  note "pi:        $(pi --version)  ($(command -v pi))"
+  if have node; then note "node:      $(node --version)"; else warn "node is not on PATH"; fi
+  if have rg; then
+    note "ripgrep:   $(rg --version | head -1)"
+  else
+    warn "ripgrep (rg) is missing - pi-sandbox refuses to start without it: brew install ripgrep"
+  fi
+  note "python3:   $(python3 --version)"
+  note "agent dir: $AGENT_DIR"
+}
+
+create_directories() {
+  step "Directories"
+  run mkdir -p "$AGENT_DIR/skills" "$AGENT_DIR/prompts" "$AGENT_DIR/extensions"
+  ok "$AGENT_DIR"
+}
+
+merge_settings() {
+  step "settings.json (merged, never overwritten)"
+
+  if [ -f "$AGENT_DIR/settings.json" ]; then
+    run cp -n "$AGENT_DIR/settings.json" "$AGENT_DIR/settings.json.orig"
+  else
+    note "no existing settings.json"
+  fi
+
+  if [ "$DRY_RUN" = 1 ]; then
+    note "[dry-run] would merge config/settings.json into $AGENT_DIR/settings.json"
+    return
+  fi
+
+  python3 "$REPO_DIR/lib/merge-settings.py" "$AGENT_DIR/settings.json" "$REPO_DIR/config/settings.json" ||
+    problem "settings merge failed - your settings.json was left as it was"
+}
+
+install_agents_md() {
+  step "Global AGENTS.md (the working agreement)"
+  install_file "$REPO_DIR/config/AGENTS.md" "$AGENT_DIR/AGENTS.md"
+  ok "$AGENT_DIR/AGENTS.md  ($(file_size "$AGENT_DIR/AGENTS.md") bytes)"
+  note "the lean variant is $(file_size "$REPO_DIR/config/AGENTS.lean.md") bytes: config/AGENTS.lean.md"
+}
+
+install_sandbox_config() {
+  step "sandbox.json (filesystem and network policy)"
+  install_file "$REPO_DIR/config/sandbox.json" "$AGENT_DIR/sandbox.json"
+  ok "$AGENT_DIR/sandbox.json"
+}
+
+install_plan_template() {
+  step "Plan prompt template"
+  install_file "$REPO_DIR/prompts/plan.md" "$AGENT_DIR/prompts/plan.md"
+  ok "/plan - 0 prompt tokens until it is used"
+}
+
+install_brave_skill() {
+  step "brave-search skill"
+  run mkdir -p "$AGENT_DIR/skills/brave-search"
+  install_file "$REPO_DIR/skills/brave-search/SKILL.md" "$AGENT_DIR/skills/brave-search/SKILL.md"
+  install_file "$REPO_DIR/skills/brave-search/brave.mjs" "$AGENT_DIR/skills/brave-search/brave.mjs"
+  run chmod +x "$AGENT_DIR/skills/brave-search/brave.mjs"
+  ok "$AGENT_DIR/skills/brave-search/"
+  note "needs a key before first use: pbpaste | node $AGENT_DIR/skills/brave-search/brave.mjs setkey"
+}
+
+# Fetch herdr's own SKILL.md: prefer the copy bundled with the installed herdr, fall back to GitHub.
+fetch_herdr_skill() { # <output file>
+  local out="$1"
+  if have herdr && herdr --skill >"$out" 2>/dev/null && [ -s "$out" ]; then
+    note "source: herdr --skill (release-matched)"
+    return 0
+  fi
+  if have curl && curl -fsS --max-time 30 "$HERDR_SKILL_URL" -o "$out" 2>/dev/null && [ -s "$out" ]; then
+    note "source: GitHub $HERDR_SKILL_TAG (herdr is not installed - re-run this installer afterwards)"
+    return 0
+  fi
+  return 1
+}
+
+install_herdr_skill() {
+  step "herdr skill (user-invoked only, 0 prompt tokens)"
+
+  if [ "$DRY_RUN" = 1 ]; then
+    note "[dry-run] would fetch herdr's SKILL.md and mark it user-invoked"
+    return
+  fi
+
+  local target="$AGENT_DIR/skills/herdr/SKILL.md"
+  local staged
+  staged="$(mktemp)"
+  mkdir -p "$(dirname "$target")"
+
+  if fetch_herdr_skill "$staged" && head -1 "$staged" | grep -q '^---'; then
+    cp "$staged" "$target"
+    python3 "$REPO_DIR/lib/make-skill-manual.py" "$target" || warn "could not mark the herdr skill user-invoked"
+  else
+    warn "could not fetch the herdr skill - install herdr, then re-run this installer"
+  fi
+  rm -f "$staged"
+}
+
+install_sandbox_package() {
+  step "pi-sandbox (pinned to $SANDBOX_PACKAGE)"
+
+  local package_dir="$AGENT_DIR/npm/node_modules/pi-sandbox"
+  if [ -d "$package_dir" ]; then
+    ok "already installed: version $(package_version "$package_dir")"
+    return
+  fi
+
+  if [ "$DRY_RUN" = 1 ]; then
+    note "[dry-run] would run: pi install $SANDBOX_PACKAGE"
+    return
+  fi
+
+  # Run from $HOME: an inaccessible working directory makes the child process fail before it starts.
+  # No PI_OFFLINE here either - installing a package needs the network.
+  (cd "$HOME" && pi install "$SANDBOX_PACKAGE")
+
+  if [ -d "$package_dir" ]; then
+    ok "installed: version $(package_version "$package_dir")"
+  else
+    problem "pi-sandbox is not on disk, so the sandbox will not be active"
+    note "run it yourself from a valid directory: pi install $SANDBOX_PACKAGE"
+    note "a settings.json entry alone does not put any code on disk"
+  fi
+}
+
+verify_installation() {
+  step "Verify"
+
+  # A dry run writes nothing, so there is nothing to verify - checking would report every file as
+  # missing and exit non-zero.
+  if [ "$DRY_RUN" = 1 ]; then
+    note "[dry-run] skipped: nothing was written"
+    return
+  fi
+
+  local file
+  for file in AGENTS.md sandbox.json prompts/plan.md skills/brave-search/brave.mjs; do
+    [ -f "$AGENT_DIR/$file" ] || problem "$file is missing"
+  done
+
+  for file in settings.json sandbox.json; do
+    is_valid_json "$AGENT_DIR/$file" || problem "$AGENT_DIR/$file is not valid JSON"
+  done
+
+  have rg || warn "ripgrep is missing - pi-sandbox will refuse to start"
+
+  if [ -f "$AGENT_DIR/skills/herdr/SKILL.md" ]; then
+    python3 "$REPO_DIR/lib/make-skill-manual.py" "$AGENT_DIR/skills/herdr/SKILL.md" --check >/dev/null ||
+      problem "the herdr skill is still model-invoked (about +90 tokens on every request)"
+  fi
+
+  [ "$ERRORS" = 0 ] && ok "all files present and valid"
+}
+
+report_context_cost() {
+  step "Measured context cost"
+  [ "$DRY_RUN" = 1 ] && return
+  python3 "$REPO_DIR/tools/context-cost.py" "$AGENT_DIR" "$REPO_DIR"
+}
+
+print_next_steps() {
+  cat <<NEXT
+
+== Manual steps that remain (not scriptable)
+   1. Authenticate pi:            pi   then   /login        (or export your provider API key)
+   2. Save model + thinking:      /model then Ctrl+S ,  /thinking then Ctrl+S
+   3. Brave key:                  pbpaste | node $AGENT_DIR/skills/brave-search/brave.mjs setkey
+   4. Start a project:            cd /path/to/project && pi
+      - approve the project-trust prompt once, or run /trust
+      - copy the project templates in and fill in the commands:
+          cp $REPO_DIR/templates/project/AGENTS.md /path/to/project/AGENTS.md
+          cp $REPO_DIR/templates/project/TODO.md   /path/to/project/TODO.md
+   5. Herdr (optional):           brew install herdr && herdr
+      - Herdr -> Settings -> Integrations -> install the Pi integration
+      - verify with: herdr integration status
+      - then re-run this installer so the herdr skill matches your release
+
+== Next
+   ./test-bundle.sh          self-test: what pi assembles and what it costs
+   tools/measure.sh <name>   measure any other package before adopting it
+   DESIGN.md                 why these choices, the numbers, and what was left out
+NEXT
+
+  if [ "$WARNINGS" != 0 ] || [ "$ERRORS" != 0 ]; then
+    say ""
+    say "$ERRORS failure(s), $WARNINGS warning(s) - see the FAIL and warn lines above."
+  fi
+}
+
+# --------------------------------------------------------------------------------------
+# entry point
+# --------------------------------------------------------------------------------------
+
+parse_args() {
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --dry-run) DRY_RUN=1 ;;
+      -h | --help) SHOW_HELP=1 ;;
+      *) die "unknown option: $1 (try --help)" ;;
+    esac
+    shift
+  done
+}
+
+main() {
+  parse_args "$@"
+  if [ "$SHOW_HELP" = 1 ]; then
+    usage
+    exit 0
+  fi
+
+  preflight
+  create_directories
+  merge_settings
+  install_agents_md
+  install_sandbox_config
+  install_plan_template
+  install_brave_skill
+  install_herdr_skill
+  install_sandbox_package
+  verify_installation
+  report_context_cost
+  print_next_steps
+
+  [ "$ERRORS" = 0 ] || exit 2
+}
+
+main "$@"

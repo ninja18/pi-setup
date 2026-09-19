@@ -1,0 +1,16 @@
+# macOS
+.DS_Store
+._*
+
+# installer / manual backups
+*.bak.*
+settings.json.orig
+
+# measurement output from tools/measure.sh when PI_CTX_AUDIT_HOME is unset
+ctx-audit-out/
+pi-audit/
+
+# anything pi or a package manager leaves behind locally
+node_modules/
+.pi/sessions/
+*.log
