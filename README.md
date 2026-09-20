@@ -1,8 +1,8 @@
 # pi-setup
 
-A minimal, **measured** configuration for [pi](https://pi.dev) on macOS: no plan-mode extension, no
-todo extension, no MCP, no subagent package. The discipline comes from markdown files that cost
-nothing until they are used; the only package is a sandbox.
+A minimal, **measured** configuration for [pi](https://pi.dev) on macOS: no plan-mode extension, no todo extension, no MCP, no subagent package.
+The main principle behind this setup is keep pi away from bloating and still add features that we use in other harnesses.
+This discipline comes from markdown files that cost nothing until they are used instead of extensions which consume context and self created extensions which need maintenance.
 
 Total cost: **+1488 tokens per request** over a bare pi (and +1046 if you use the lean `AGENTS.md`).
 For comparison, the popular `pi-lens` extension alone costs +5402 and `pi-subagents` costs +5918 —
@@ -50,9 +50,9 @@ cd ~/pi-setup
 `install.sh` is idempotent. It **merges** `settings.json` — your `defaultModel`, `defaultProvider`
 and anything else already there survive; this repo's keys win only where they overlap — and it backs
 up every file it replaces with a `.bak.<timestamp>` suffix. Re-run it after installing herdr to pick
-up the release-matched skill. `--dry-run` shows every step without writing anything (and verifies
-nothing, because nothing was written); `--help` prints usage. It exits non-zero if a file fails to
-install or a config ends up invalid, so it is safe to chain in a setup script.
+up the release-matched skill.
+`--dry-run` shows every step without writing anything (and verifies nothing, because nothing was written);
+`--help` prints usage. It exits non-zero if a file fails to install or a config ends up invalid, so it is safe to chain in a setup script.
 
 Then, once:
 
@@ -89,10 +89,6 @@ pi                                    # inside a project
 /todos                                # NOT available - there is no todo extension, by design
 ```
 
-Expected: the footer shows a lock while the sandbox is active; a write outside the project raises a
-prompt instead of succeeding; a `curl` to a host that is not on the allow list is blocked and
-prompted. Inside the repo, `TODO.md` is ticked as work completes.
-
 `./test-bundle.sh` installs the whole configuration into a scratch agent directory, runs pi against it,
 and **asserts** what loaded: that the base files exist, that the sandbox extension, `/plan` and both
 skills registered, that each `AGENTS.md` variant reached the prompt, and that the Brave script fails
@@ -120,17 +116,15 @@ DESIGN.md                  why each choice was made, the measurements, and what 
 
 ## What settings.json sets, and why
 
-| Key                      | Value                  | Why                                                                |
-| ------------------------ | ---------------------- | ------------------------------------------------------------------ |
-| `packages`               | `npm:pi-sandbox@0.6.8` | pinned, so `pi update --all` cannot move it under you              |
-| `enableInstallTelemetry` | `false`                | no install/update ping, no provider attribution headers            |
-| `showCacheMissNotices`   | `true`                 | surfaces prompt-cache misses, compaction events, provider recovery |
-| `defaultProjectTrust`    | `"ask"`                | keeps the project-local settings/extensions gate in place          |
-| `compaction`             | explicit defaults      | `reserveTokens: 16384`, `keepRecentTokens: 20000`; tune per model  |
-| `retry`                  | enabled, 3 attempts    | a transient provider error should not end the task                 |
-| `theme`                  | `dark`                 | cosmetic                                                           |
+| Key                      | Value               | Why                                                                |
+| ------------------------ | ------------------- | ------------------------------------------------------------------ |
+| `enableInstallTelemetry` | `false`             | no install/update ping, no provider attribution headers            |
+| `showCacheMissNotices`   | `true`              | surfaces prompt-cache misses, compaction events, provider recovery |
+| `defaultProjectTrust`    | `"ask"`             | keeps the project-local settings/extensions gate in place          |
+| `compaction`             | explicit defaults   | `reserveTokens: 16384`, `keepRecentTokens: 20000`; tune per model  |
+| `retry`                  | enabled, 3 attempts | a transient provider error should not end the task                 |
 
-Environment variables are deliberately not written into your `~/.zshrc`; `env.example.sh` has the
+Environment variables are deliberately not written into `~/.zshrc`; `env.example.sh` has the
 three worth knowing.
 
 ## Sandbox behaviour (what you will actually feel)
@@ -144,13 +138,11 @@ three worth knowing.
 | Reach a domain not on the allow list                                        | prompts per domain; pre-approve with `/sandbox-allow domain <host>`                          |
 | A domain that is both allowed and denied                                    | stays blocked - check both files                                                             |
 
-Shipped allow list: the npm registry, `nodejs.org`, the GitHub family, `api.search.brave.com`. Add
-your own stack's hosts as they come up — `pypi.org`, `crates.io`, `proxy.golang.org`, an internal API.
+Check the sandbox.json for the network policy and update the allowlist as per the project needs.
 `sandboxUserShell: true` means the `!` commands you type yourself are sandboxed too; `Alt+S` toggles
 the sandbox for the session; `/sandbox` shows the effective config.
 
-Add a host deliberately by editing `~/.pi/agent/sandbox.json` and restarting pi — grants saved to disk
-are not broadcast to running sessions.
+Add a host deliberately by editing `~/.pi/agent/sandbox.json` and restarting pi — grants saved to disk are not broadcast to running sessions.
 
 **This is not real isolation.** It raises the cost of an accident and limits what a prompt-injected
 instruction can reach; it is not a container, not a VM, and not protection against a malicious
@@ -179,7 +171,7 @@ schemas, re-sent on every request. Full table in [DESIGN.md](DESIGN.md#results-p
 The one line item worth understanding is the global `AGENTS.md`: it is ~930 tokens of the ~1488, so
 `AGENTS.lean.md` exists as a drop-in if you want most of those back.
 
-## FAQ
+## Other good practices
 
 ### git checkpointing — pi has no undo
 
@@ -201,35 +193,6 @@ workflow. Concretely:
 7. **Ignore agent scratch** (`.pi/`, generated artefacts) so it never lands in a commit, and stage
    selectively with `git add -p`.
 
-### Pinning third-party packages
-
-Pi packages come from npm, git, or a local path, and are recorded in `settings.json`:
-
-```bash
-pi install npm:pi-sandbox@0.6.8        # pinned to an exact version
-pi install git:github.com/user/repo@v1 # pinned to a tag or commit
-pi install ./local/path                # local directory, not copied
-```
-
-Per pi's documentation, versioned specs are pinned and **skipped by package updates**
-(`pi update --extensions`, `pi update --all`), and git refs are reconciled to the configured ref but
-never advanced. So pinning means no drift until you deliberately move it:
-`pi install npm:pi-sandbox@0.7.0`. Pin anything you have not read end to end — that includes
-`pi-sandbox`. `pi list` shows what settings declare; to confirm what is on disk:
-
-```bash
-python3 -c "import json;print(json.load(open('$HOME/.pi/agent/npm/node_modules/pi-sandbox/package.json'))['version'])"
-```
-
-A settings entry is not installed code: if the install step is interrupted you get a declared package
-with no files, and the extension silently never loads. `install.sh` verifies the directory and says so
-loudly if it is missing.
-
-Pin pi itself the same way: `npm install -g --ignore-scripts @earendil-works/pi-coding-agent@0.85.1`.
-`pi update --self` moves it; `pi update --all` updates pi and every unpinned package. Extensions run
-with your full user permissions, so read their source — or trial one for a single run with
-`pi -e npm:<package>` — before installing.
-
 ## Rollback
 
 ```bash
@@ -244,8 +207,6 @@ Removing pi itself (`npm uninstall -g @earendil-works/pi-coding-agent`) leaves `
 place — settings, credentials and sessions are yours to keep.
 
 ## Improvements needed
-
-Considered, deliberately not built yet.
 
 - **Real isolation instead of a guardrail** — a container/VM path for pi itself (workspace-only mount,
   no host `~/.pi/agent`, no capabilities), plus Docker Sandboxes / Gondolin / OpenShell. `pi-sandbox`
