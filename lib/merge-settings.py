@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 """Merge bundle settings into an existing pi settings.json without losing existing keys.
 
-Usage: merge-settings.py <target-settings.json> <bundle-settings.json>
+Usage: merge-settings.py <target-settings.json> <bundle.json> [<bundle.json> ...]
 
 Rules:
-  - Keys from the bundle win (they are the values this setup deliberately chose).
+  - Keys from the bundles win, in the order given (they are the values this setup deliberately chose).
   - Everything else already in the target is preserved (defaultModel, defaultProvider, ...).
-  - `packages` is a union, bundle entries first, deduplicated.
+  - `packages` is a union across all bundles and the target, bundles first, deduplicated. That is what
+    lets a package bundle live in its own file and only be merged when it is wanted.
   - The original file is copied to <target>.bak.<timestamp> when it changes.
 """
 import json
@@ -15,8 +16,23 @@ import shutil
 import sys
 import time
 
-target, bundle_path = sys.argv[1], sys.argv[2]
-new = json.load(open(bundle_path, encoding="utf-8"))
+if len(sys.argv) < 3:
+    print("usage: merge-settings.py <target-settings.json> <bundle.json> [<bundle.json> ...]")
+    sys.exit(1)
+
+target = sys.argv[1]
+bundle_paths = sys.argv[2:]
+
+new = {}
+packages = []
+for path in bundle_paths:
+    try:
+        bundle = json.load(open(path, encoding="utf-8"))
+    except Exception as exc:
+        print(f"  ! {path} is not readable JSON ({exc})")
+        sys.exit(2)
+    packages += bundle.get("packages") or []
+    new = {**new, **bundle}
 
 cur = {}
 if os.path.exists(target):
@@ -27,9 +43,9 @@ if os.path.exists(target):
         sys.exit(2)
 
 merged = {**cur, **new}
-packages = list(dict.fromkeys((new.get("packages") or []) + (cur.get("packages") or [])))
-if packages:
-    merged["packages"] = packages
+all_packages = list(dict.fromkeys(packages + (cur.get("packages") or [])))
+if all_packages:
+    merged["packages"] = all_packages
 
 added = {k: v for k, v in merged.items() if k not in cur or cur[k] != v}
 if not added:

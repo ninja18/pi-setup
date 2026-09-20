@@ -4,9 +4,9 @@ A minimal, **measured** configuration for [pi](https://pi.dev) on macOS: no plan
 The main principle behind this setup is keep pi away from bloating and still add features that we use in other harnesses.
 This discipline comes from markdown files that cost nothing until they are used instead of extensions which consume context and self created extensions which need maintenance.
 
-Total cost: **+1488 tokens per request** over a bare pi (and +1046 if you use the lean `AGENTS.md`).
-For comparison, the popular `pi-lens` extension alone costs +5402 and `pi-subagents` costs +5918 —
-see the [full measurements](DESIGN.md#results-pi-0851-linux-aarch64).
+Total cost: **+1847 tokens per request** over a bare pi (+1420 with the lean `AGENTS.md`). For
+comparison, the popular `pi-lens` extension alone costs +5402 and `pi-subagents` costs +5918 — see the
+[full measurements](DESIGN.md#results-pi-0851).
 
 Everything here was verified on pi 0.85.1 by dumping what pi actually assembles into the prompt
 (no API key needed). The reasoning behind each choice, the numbers, and why several well-known
@@ -14,38 +14,43 @@ extensions were deliberately left out are in **[DESIGN.md](DESIGN.md)**.
 
 ## What you get
 
-| Decision                   | Implementation                                                           | Prompt cost                 |
-| -------------------------- | ------------------------------------------------------------------------ | --------------------------- |
-| Plan before editing        | `prompts/plan.md` → `/plan` (a template, not a mode)                     | **0**                       |
-| Track multi-step work      | a `TODO.md` convention in `AGENTS.md`                                    | part of the ~930-token file |
-| Web search + fetch         | `skills/brave-search/` — dependency-free script, Keychain-backed API key | ~110 (skill description)    |
-| Delegate to subagents      | herdr's own skill, installed **user-invoked** as `/skill:herdr`          | **0**                       |
-| Constrain writes + network | `npm:pi-sandbox@0.6.8` (pinned) + `sandbox.json`                         | **0**                       |
-| A stable default posture   | `settings.json`, `env.example.sh`                                        | 0                           |
+| Decision                 | Implementation                                                           | Prompt cost                 |
+| ------------------------ | ------------------------------------------------------------------------ | --------------------------- |
+| Plan before editing      | `prompts/plan.md` → `/plan` (a template, not a mode)                     | **0**                       |
+| Track multi-step work    | a `TODO.md` convention in `AGENTS.md`                                    | part of the ~910-token file |
+| Web search + fetch       | `skills/brave-search/` — dependency-free script, Keychain-backed API key | ~110 (skill description)    |
+| Delegate to subagents    | herdr's own skill, installed **user-invoked** as `/skill:herdr`          | **0**                       |
+| A stable default posture | `settings.json`, `env.example.sh`                                        | 0                           |
 
-`pi-sandbox` is free in context terms because it wraps `bash` and gates the file tools rather than
-registering new tools. It is a guardrail, not a security boundary — read
-[what it is and is not](DESIGN.md#security-model-what-the-sandbox-is-and-is-not) before you rely on it.
+**No sandbox layer, deliberately.** `pi-sandbox` was removed after an evaluation: its failures cannot
+be fixed in its config (a process started in one tool call cannot be signalled from a later one;
+`ps`, `top`, `sudo` and GUI apps do not run; the domain "allowlist" turned out not to be enforced),
+and making real toolchains work inside it needs per-toolchain workarounds such as
+`CLANG_MODULE_CACHE_PATH` for anything that builds Objective-C modules. It was a guardrail rather than
+a boundary, and it cost more in day-to-day troubleshooting than it returned in safety. [Why](DESIGN.md#no-sandbox-layer-why-pi-sandbox-is-not-included),
+with the full catalogue in [SANDBOX-FAILURE-MODES.md](SANDBOX-FAILURE-MODES.md).
 
 ## Requirements
 
-| Need             | Why                                      | Check                                        |
-| ---------------- | ---------------------------------------- | -------------------------------------------- |
-| macOS with zsh   | what this is written for                 | `echo $SHELL`                                |
-| Node ≥ 22.19     | pi 0.85.1 requires it                    | `node --version`                             |
-| pi on `PATH`     | the thing being configured               | `pi --version`                               |
-| **ripgrep**      | `pi-sandbox` refuses to start without it | `rg --version` → else `brew install ripgrep` |
-| python3          | used by the installer and the tooling    | `python3 --version`                          |
-| herdr (optional) | only for the multi-pane workflow         | `herdr --version`                            |
+| Need             | Why                                   | Check               |
+| ---------------- | ------------------------------------- | ------------------- |
+| macOS with zsh   | what this is written for              | `echo $SHELL`       |
+| Node ≥ 22.19     | pi 0.85.1 requires it                 | `node --version`    |
+| pi on `PATH`     | the thing being configured            | `pi --version`      |
+| python3          | used by the installer and the tooling | `python3 --version` |
+| herdr (optional) | only for the multi-pane workflow      | `herdr --version`   |
 
 ## Install
 
 ```bash
 git clone <this-repo> ~/pi-setup
 cd ~/pi-setup
-./install.sh --dry-run     # see exactly what would change
-./install.sh               # apply
+./install.sh --dry-run        # see exactly what would change
+./install.sh                  # apply
 ```
+
+Nothing sandbox-related is installed, because this setup does not ship a sandbox layer — see
+[why](DESIGN.md#no-sandbox-layer-why-pi-sandbox-is-not-included).
 
 `install.sh` is idempotent. It **merges** `settings.json` — your `defaultModel`, `defaultProvider`
 and anything else already there survive; this repo's keys win only where they overlap — and it backs
@@ -82,28 +87,26 @@ prompt once per repo (or run `/trust`).
 
 ```bash
 pi                                    # inside a project
-/sandbox                              # effective sandbox config; the footer shows a lock while active
 /plan  add a health endpoint          # expands the template, explores read-only
 /skill:brave-search  pi 0.85 changelog
 /skill:herdr                          # only meaningful inside herdr
 /todos                                # NOT available - there is no todo extension, by design
 ```
 
-`./test-bundle.sh` installs the whole configuration into a scratch agent directory, runs pi against it,
-and **asserts** what loaded: that the base files exist, that the sandbox extension, `/plan` and both
-skills registered, that each `AGENTS.md` variant reached the prompt, and that the Brave script fails
-cleanly on a bad token. It prints the measured token cost, exits non-zero if any check fails, and
-takes `--keep` to preserve the scratch directory for inspection. It needs `pi`, `node` and `python3`
-on `PATH`, and no API key — the prompt is dumped before the auth check.
+`./test-bundle.sh` installs the configuration into a scratch agent directory, runs pi against it, and
+**asserts** what loaded: the base files, that `/plan` and both skills registered, that each `AGENTS.md`
+variant reached the prompt, that **no** sandbox layer is present, and that the Brave script fails
+cleanly on a bad token. It prints the measured token cost for both `AGENTS.md` shapes, exits non-zero if
+any check fails, and takes `--keep` to preserve the scratch directory for inspection. It needs `pi`,
+`node` and `python3` on `PATH`, and no API key — the prompt is dumped before the auth check.
 
 ## Files
 
 ```
-install.sh                 idempotent installer: merges settings, copies files, pins the sandbox
+install.sh                 idempotent installer: settings.json, AGENTS.md, /plan and the skills
 config/settings.json       merged into ~/.pi/agent/settings.json
-config/sandbox.json        ~/.pi/agent/sandbox.json
-config/AGENTS.md           ~/.pi/agent/AGENTS.md   - full working agreement (~930 tokens)
-config/AGENTS.lean.md      same rules, less prose  (~370 tokens) - swap in if you want the tokens back
+config/AGENTS.md           ~/.pi/agent/AGENTS.md   - full working agreement
+config/AGENTS.lean.md      same rules, less prose  - swap in if you want the tokens back
 prompts/plan.md            ~/.pi/agent/prompts/plan.md - /plan template
 skills/brave-search/       ~/.pi/agent/skills/brave-search/ - SKILL.md + brave.mjs
 templates/project/         copy into each repo: AGENTS.md + TODO.md
@@ -112,6 +115,7 @@ lib/                       helper scripts used by install.sh
 env.example.sh             optional shell exports, all commented out
 test-bundle.sh             end-to-end self-test of this configuration
 DESIGN.md                  why each choice was made, the measurements, and what was left out
+SANDBOX-FAILURE-MODES.md   the pi-sandbox evaluation: every denial, with rules and reproductions
 ```
 
 ## What settings.json sets, and why
@@ -127,49 +131,31 @@ DESIGN.md                  why each choice was made, the measurements, and what 
 Environment variables are deliberately not written into `~/.zshrc`; `env.example.sh` has the
 three worth knowing.
 
-## Sandbox behaviour (what you will actually feel)
-
-| Situation                                                                   | What happens                                                                                 |
-| --------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
-| Edit files inside the project, run tests, `npm install`                     | allowed silently                                                                             |
-| Write outside the project and `/tmp`                                        | **prompts**: abort (a 10-minute timeout aborts) / allow for session / project / all projects |
-| Read outside the project (e.g. `~/Documents`)                               | prompts; granting adds the path to `allowRead`                                               |
-| Write `.env`, `*.pem`, `*.key`, `~/.ssh`, `~/.aws`, `~/.pi/agent/auth.json` | **hard block**, never prompted                                                               |
-| Reach a domain not on the allow list                                        | prompts per domain; pre-approve with `/sandbox-allow domain <host>`                          |
-| A domain that is both allowed and denied                                    | stays blocked - check both files                                                             |
-
-Check the sandbox.json for the network policy and update the allowlist as per the project needs.
-`sandboxUserShell: true` means the `!` commands you type yourself are sandboxed too; `Alt+S` toggles
-the sandbox for the session; `/sandbox` shows the effective config.
-
-Add a host deliberately by editing `~/.pi/agent/sandbox.json` and restarting pi — grants saved to disk are not broadcast to running sessions.
-
-**This is not real isolation.** It raises the cost of an accident and limits what a prompt-injected
-instruction can reach; it is not a container, not a VM, and not protection against a malicious
-extension (extensions run with your full user permissions). If you need a boundary, run pi itself in a
-container or VM — see
-[the security section of DESIGN.md](DESIGN.md#security-model-what-the-sandbox-is-and-is-not).
-
 ## Measured context cost
 
 `tokens = ceil(chars/4)`, pi's own estimator; "prefill" is the system prompt plus **active** tool
-schemas, re-sent on every request. Full table in [DESIGN.md](DESIGN.md#results-pi-0851-linux-aarch64).
+schemas, re-sent on every request. Full table in [DESIGN.md](DESIGN.md#results-pi-0851).
 
-| Configuration                                              | Prefill  | vs bare pi |
-| ---------------------------------------------------------- | -------- | ---------- |
-| bare pi (4 tools)                                          | 1316     | —          |
-| **this setup**, full `AGENTS.md`                           | **2804** | +1488      |
-| **this setup**, `AGENTS.lean.md`                           | **2362** | +1046      |
-| + `@plannotator/pi-extension` (plan mode with a hard gate) | ~3285    | +1969      |
-| + `pi-lens`, lean (6-tool allowlist)                       | ~4224    | +2908      |
-| + `@juicesharp/rpiv-todo`                                  | ~3708    | +2392      |
-| + `pi-web-access`                                          | ~5703    | +4387      |
-| + `pi-subagents`                                           | ~8722    | +7406      |
-| + `pi-lens` at full width (17 tools)                       | ~8206    | +6890      |
-| "install everything"                                       | 16735    | +15419     |
+| Configuration                                      | Prefill  | vs bare pi |
+| -------------------------------------------------- | -------- | ---------- |
+| bare pi (4 tools)                                  | 1316     | —          |
+| **this setup**, default                            | **3163** | +1847      |
+| **this setup**, `AGENTS.lean.md`                   | **2736** | +1420      |
+| **if you add an extension instead**                |          |            |
+| `@plannotator/pi-extension` (plan mode, hard gate) | —        | +481       |
+| `@juicesharp/rpiv-todo`                            | —        | +904       |
+| `pi-lens` (6-tool allowlist)                       | —        | +1420      |
+| `pi-web-access`                                    | —        | +2899      |
+| `pi-lens` at full width (17 tools)                 | —        | +5402      |
+| `pi-subagents`                                     | —        | +5918      |
+| "install everything" (all of the above)            | 16735    | +15419     |
 
-The one line item worth understanding is the global `AGENTS.md`: it is ~930 tokens of the ~1488, so
-`AGENTS.lean.md` exists as a drop-in if you want most of those back.
+The extension rows are deltas over bare pi, measured in [DESIGN.md](DESIGN.md#results-pi-0851);
+add one to whichever baseline above you are actually running.
+
+The two line items worth understanding: the global `AGENTS.md` is ~910 tokens of the ~1847, and the
+project `AGENTS.md` template is now the second largest at ~512 (it was ~267 before it was made
+language-agnostic). `AGENTS.lean.md` exists as a drop-in if you want most of the first one back.
 
 ## Other good practices
 
@@ -196,29 +182,27 @@ workflow. Concretely:
 ## Rollback
 
 ```bash
-rm ~/.pi/agent/AGENTS.md ~/.pi/agent/sandbox.json
+rm ~/.pi/agent/AGENTS.md
 rm ~/.pi/agent/prompts/plan.md
 rm -rf ~/.pi/agent/skills/brave-search ~/.pi/agent/skills/herdr
-pi remove npm:pi-sandbox
 ls ~/.pi/agent/*.bak.* ~/.pi/agent/settings.json.orig   # closest backups of what was replaced
 ```
 
-Removing pi itself (`npm uninstall -g @earendil-works/pi-coding-agent`) leaves `~/.pi/agent/` in
-place — settings, credentials and sessions are yours to keep.
-
 ## Improvements needed
 
-- **Real isolation instead of a guardrail** — a container/VM path for pi itself (workspace-only mount,
-  no host `~/.pi/agent`, no capabilities), plus Docker Sandboxes / Gondolin / OpenShell. `pi-sandbox`
-  limits blast radius; it is not a security boundary.
+- **Add a guardrail layer for pi** — there is none today: pi's `bash`, `write` and `edit` tools run
+  with your full user rights. `pi-sandbox` was tried and rejected (see
+  [DESIGN.md](DESIGN.md#no-sandbox-layer-why-pi-sandbox-is-not-included)): its failures cannot be
+  configured away, and real toolchains need per-toolchain workarounds. Candidates to measure next:
+  `@gotgenes/pi-permission-system` (in-process read/write/command gating — no OS layer, so none of the
+  `sandbox-exec` failure classes), a container/VM path where the whole of pi runs with a
+  workspace-only mount and no host `~/.pi/agent`, and the managed options (Docker Sandboxes,
+  Gondolin, OpenShell). Until then the guardrail is process: git checkpoints, small diffs, review.
 - **Offload the Brave script to a managed skill** — `npx skills add badlogic/pi-skills@brave-search -g -y`
   installs the upstream skill (by pi's author) into `~/.agents/skills/`, which pi reads, tracked in
   `~/.agents/.skill-lock.json`, and drops our vendored `brave.mjs`. During research this worked, at the
   cost of an `npm install` in the skill dir and `BRAVE_API_KEY` instead of the Keychain lookup.
 - **Add external memory** - to capture project details and quirks beyond what the Agents.md and TODO.md captures.
-- **Tune `config/sandbox.json` from real usage** — after a few weeks fold the approvals you actually
-  granted into deliberate defaults, drop the one-off mistakes, and revisit `allowLocalBinding`,
-  `permissionPromptTimeoutSeconds` (600 s is generous) and what belongs in `denyWrite`.
 - **Pin the managed skill** — `npx skills add` tracks `main`; add a version check once upstream tags a
   release.
 

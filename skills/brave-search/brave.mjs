@@ -111,7 +111,7 @@ async function search(query, flags) {
 	} catch (err) {
 		fail(
 			`request failed: ${err?.cause?.code || err.message}`,
-			"if this is a sandboxed bash command, api.search.brave.com must be in allowedDomains in ~/.pi/agent/sandbox.json",
+			"check the network and that api.search.brave.com resolves (DNS, VPN, proxy)",
 		);
 	}
 	if (!res.ok) {
@@ -187,7 +187,7 @@ async function fetchPage(url, flags) {
 	} catch (err) {
 		fail(
 			`fetch failed: ${err?.cause?.code || err.message}`,
-			"if this is a sandboxed bash command, the host must be in allowedDomains in ~/.pi/agent/sandbox.json",
+			"check the network and that the host resolves (DNS, VPN, proxy)",
 		);
 	}
 	if (!res.ok) fail(`HTTP ${res.status} for ${url}`);

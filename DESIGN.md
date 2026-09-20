@@ -34,7 +34,8 @@ So the design goal was: **get the behavioural rails, without paying for tool sch
    exactly `+0`. Plan mode, by contrast, is a state machine that must be resident.
 6. **Advice where you can, enforcement where advice fails.** Instructions in `AGENTS.md` handle
    ~90% of desired behaviour for a few hundred tokens. The remaining 10% — filesystem writes,
-   network reach — has to be enforced outside the model, which is what the sandbox is for.
+   network reach — has to be enforced outside the model, and no layer we have measured earns its keep
+   yet: see [No sandbox layer](#no-sandbox-layer-why-pi-sandbox-is-not-included).
 7. **Measure on your own machine.** Adoption numbers tell you a package is maintained; they tell you
    nothing about what it costs you. The harness in `tools/` answers that in a couple of minutes.
 
@@ -46,8 +47,8 @@ So the design goal was: **get the behavioural rails, without paying for tool sch
 | Track multi-step work        | `@juicesharp/rpiv-todo` **+904** (tool schema 474 + 430 guidance) · `TODO.md` convention in `AGENTS.md` **+202**                                                                                     | `TODO.md` file                                   | 4.5× cheaper, survives new sessions and compaction, visible in git, works in any other agent you use.                                                                                                                                                                                                                                          |
 | Delegate to subagents        | `pi-subagents` **+5918** · `pi-herdr-subagents` **+2118** · herdr's own skill **+0**                                                                                                                 | herdr skill, invoked on demand                   | herdr already gives real terminal panes and lifecycle state for pi; the skill is user-invoked, so it costs nothing until you ask for help with panes.                                                                                                                                                                                          |
 | Web search + fetch           | `pi-web-access` **+2899** · `pi-mcp-adapter` + a Brave MCP server **+1077** · Brave skill + script **~+110**                                                                                         | skill + dependency-free script                   | You already pay for a search API. 26× cheaper than `pi-web-access`, no MCP server to keep running.                                                                                                                                                                                                                                             |
-| Constrain writes and network | `pi-sandbox` **+0** · `@gotgenes/pi-permission-system` **+0** · container/VM (separate concern)                                                                                                      | `pi-sandbox`                                     | Both permission layers measure at zero prompt cost because they wrap `bash` and gate the file tools instead of registering new tools. `pi-sandbox` adds OS-level enforcement (macOS `sandbox-exec`) and a domain allowlist with interactive prompts. Read [Security model](#security-model-what-the-sandbox-is-and-is-not) before trusting it. |
-| Instructions to the model    | One big `AGENTS.md` vs a leaner one                                                                                                                                                                  | Both shipped                                     | The full file is ~930 tokens/turn, the lean variant ~370. It is the single largest line item in the whole setup, so the choice belongs to you rather than to a default.                                                                                                                                                                        |
+| Constrain writes and network | `pi-sandbox` **+0** · `@gotgenes/pi-permission-system` **+0** · container/VM (separate concern)                                                                                                      | **nothing** — measured, then rejected               | Both cost zero prompt tokens because they wrap `bash` and gate the file tools instead of registering new tools. `pi-sandbox` was installed and used for real work before being removed: the failures it produces cannot be configured away, and making toolchains build inside it needed per-toolchain workarounds. See [No sandbox layer](#no-sandbox-layer-why-pi-sandbox-is-not-included).                                                                             |
+| Instructions to the model    | One big `AGENTS.md` vs a leaner one                                                                                                                                                                  | Both shipped                                     | The full file is ~910 tokens/turn, the lean variant ~480. It is the single largest line item in the whole setup, so the choice belongs to you rather than to a default.                                                                                                                                                                        |
 
 ## Measurements
 
@@ -76,17 +77,19 @@ Rules that materially change the answer:
   `pi-subagents`' tool is 4926 characters of description and 13810 of schema.
 - **Skills cost only their name and description** in the prompt; bodies load on use.
 - **Prompt templates and registered commands cost 0** until invoked.
-- **Sandbox and permission extensions cost 0** prompt tokens.
+- **Permission and sandbox extensions cost 0** prompt tokens: they wrap `bash` and gate the file
+  tools instead of registering new tools.
 
-### Results (pi 0.85.1, Linux aarch64)
+### Results (pi 0.85.1)
 
-Prefill = system prompt + active tool schemas. Absolute figures will differ slightly on macOS and
-across pi releases; the _ratios_ are what matter.
+Prefill = system prompt + active tool schemas. Absolute figures differ across platforms and pi
+releases by a few tokens, because the working-directory path is part of the system prompt, so the
+_ratios_ are what matter. The extension and package rows were measured on Linux aarch64; the two
+`this setup` rows were re-measured on macOS on 2026-09-21 with `./test-bundle.sh`.
 
 | Configuration                                               | Prompt tok | Δ     | Tools  | Tool tok | Prefill   | vs bare    |
 | ----------------------------------------------------------- | ---------- | ----- | ------ | -------- | --------- | ---------- |
 | bare pi                                                     | 678        | 0     | 4      | 638      | **1316**  | —          |
-| `pi-sandbox`                                                | 678        | 0     | 4      | 638      | **1316**  | **+0**     |
 | `@gotgenes/pi-permission-system`                            | 678        | 0     | 4      | 638      | **1316**  | **+0**     |
 | silent skills (`disable-model-invocation`)                  | 678        | 0     | 4      | 638      | **1316**  | **+0**     |
 | `/plan` prompt template                                     | 678        | 0     | 4      | 638      | **1316**  | **+0**     |
@@ -100,8 +103,8 @@ across pi releases; the _ratios_ are what matter.
 | `@juicesharp/rpiv-todo`                                     | 1108       | +430  | 5      | 1112     | **2220**  | +904       |
 | `pi-mcp-adapter`                                            | 725        | +47   | 6      | 1668     | **2393**  | +1077      |
 | `pi-lens` (lean, 6-tool allowlist)                          | 1193       | +515  | 6      | 1543     | **2736**  | +1420      |
-| **this setup** (full AGENTS.md + project AGENTS.md + skill) | 2166       | +1488 | 4      | 638      | **2804**  | +1488      |
-| **this setup** (lean AGENTS.md)                             | 1724       | +1046 | 4      | 638      | **2362**  | +1046      |
+| **this setup**, default (`AGENTS.md` + project template + skill) | 2525   | +1847 | 4      | 638      | **3163**  | +1847      |
+| **this setup**, lean `AGENTS.md`                            | 2098       | +1420 | 4      | 638      | **2736**  | +1420      |
 | all 38 mattpocock skills installed                          | 2319       | +1641 | 4      | 638      | **2957**  | +1641      |
 | `pi-herdr-subagents`                                        | 1445       | +767  | 8      | 1989     | **3434**  | +2118      |
 | `pi-lens` (`--exclude-tools`, 9 tools)                      | 1242       | +564  | 9      | 2516     | **3758**  | +2442      |
@@ -110,19 +113,28 @@ across pi releases; the _ratios_ are what matter.
 | `pi-subagents`                                              | 1031       | +353  | 6      | 6203     | **7234**  | +5918      |
 | "install everything" stack                                  | 2366       | +1688 | **26** | 14369    | **16735** | **+15419** |
 
-`./test-bundle.sh` prints the exact figures for your machine — they move by a handful of tokens because
-the working directory path is part of the system prompt (it reports ~2797 / ~2358 for the two
-`AGENTS.md` variants from a `/tmp` scratch directory).
+`./test-bundle.sh` prints the exact figures for your machine for both shapes of this setup — default
+and lean `AGENTS.md` — as ~3163 / ~2736 from a `$TMPDIR` scratch directory.
+
+One note on these two rows: they were re-measured twice on macOS. First after the project `AGENTS.md`
+template was rewritten to be language-agnostic rather than Node/TypeScript flavoured: **2804 / 2362** →
+**3049 / 2665** (that template is part of the prompt, and grew from **+267** to **+512** tokens). Then
+after the herdr pane guidance was added to the global `AGENTS.md`, and with the sandbox gone: →
+**3163 / 2736**. Part of that last move is the scratch directory path, which is part of the prompt —
+re-running `./test-bundle.sh` gives your own figures. The other rows in this table were measured
+without the project template, so their deltas are unaffected.
 
 Reading the table:
 
-- pi's floor is real, and it is easy to lose. Six packages took a comparable setup from ~1.3k to
-  ~16.7k — 12× — of which only the sandbox was free.
+- pi's floor is real, and it is easy to lose. A handful of packages took a comparable setup from
+  ~1.3k to ~16.7k — 12×. The free ones were the ones that shipped files, templates or wrappers rather
+  than tool schemas.
 - The cheap wins are files: `+202` for a `TODO.md` convention against `+904` for a todo tool.
 - The expensive things are tool _schemas_, not features. `pi-subagents` and `pi-lens` are 11k tokens
   of schema between them.
-- Cost is not quality. `pi-sandbox` is the second-most-valuable thing in this repo and measures at
-  zero, because it wraps `bash` instead of adding tools.
+- Cost is not quality, and free is not free. The cheapest layers are the ones that wrap `bash` or
+  ship markdown rather than tool schemas — which is why a guardrail looks like a bargain, and why
+  `pi-sandbox` still had to be judged on its behaviour and removed.
 
 ## Why certain things were not added
 
@@ -219,43 +231,60 @@ nearly free. It is excluded because nothing here requires MCP: one search API is
 and pi's own guidance is to prefer a script over a server when the surface is small. Add it if you
 have a real MCP estate (Linear, Sentry, a database) to talk to.
 
-## Security model: what the sandbox is and is not
+## No sandbox layer: why pi-sandbox is not included
 
-**`pi-sandbox` is a guardrail against mistakes, not a security boundary.**
+`pi-sandbox` was installed, used on real work, and removed. It is a well-built extension: it wraps
+`bash` (and your `!` commands) in a macOS `sandbox-exec` profile, intercepts `read`, `write` and `edit`
+in-process against the same policy, prompts for writes and reads outside the project, and hard-blocks
+`denyWrite` paths (`.env`, `*.pem`, credential files) with no prompt. It costs **+0** prompt tokens.
+As a guardrail against mistakes, it worked.
 
-What it does:
+It is not in this repo because the cost is paid constantly, in the wrong place, on ordinary work.
+Three classes of failure could not be fixed at all:
 
-- wraps `bash` (and your `!` commands) in macOS `sandbox-exec`, enforcing filesystem and network
-  rules at the OS level for those subprocesses;
-- intercepts the `read`, `write` and `edit` tools in-process against the same policy, because those
-  tools run inside the Node process and cannot be covered by the OS sandbox;
-- prompts you when a write reaches outside the project, when a read reaches outside the allow list,
-  or when a command tries a domain that is not on the allow list;
-- hard-blocks writes to `denyWrite` paths (`.env`, `*.pem`, `*.key`, credential directories) with no
-  prompt, and refuses rather than silently allowing when a prompt times out.
+- **A process cannot be signalled from a later tool call.** Each `bash` call gets its own profile and
+  signals are allowed only within `same-sandbox`, so an agent can start a server and never stop it —
+  `Operation not permitted`, even though it is the same user and the same process it started. No
+  config key exists. In real use this was the failure that bit hardest, and the workaround (start and
+  stop inside one tool call, or hand lifecycle to the application) is a discipline the sandbox imposes
+  on every long-running command.
+- **GUI apps, audio, the microphone and TCC do not work.** The window server, WebKit, `cfprefsd` and
+  `tccd` are not on the mach-lookup allowlist, and TCC consent is not a config key. On a project that
+  builds or drives a GUI — the case that prompted this evaluation — the agent cannot touch the thing
+  being built.
+- **Some denials arrive with no prompt at all.** mach-service and unix-socket denials are silent, and
+  the extension misreads exec refusals as blocked writes, offering to add something like `/bin/ps` to
+  `allowWrite`, which cannot work.
 
-What it is **not**:
+Worse than the hard failures was the tax on ordinary tools. Making the toolchains this repo actually
+uses run inside the sandbox needed per-toolchain workarounds: `cargo` could not reach its registry or
+cache, Go could not write its checksum database, clang could not write its module cache (so builds of
+anything Objective-C — a Tauri or Swift target — fail unless `CLANG_MODULE_CACHE_PATH` is pointed
+somewhere else), and `xcrun` printed a cache error on every link. Each has a fix, and each fix is
+environment knowledge unrelated to the task at hand — bought for a layer its own documentation calls a
+guardrail rather than a boundary.
 
-- **Not a container, not a VM, not an OS-level isolation boundary.** It reduces blast radius; it does
-  not contain a determined attacker who already has code execution as your user.
-- **Not protection against extensions or skills.** pi extensions are TypeScript modules that run with
-  the full permissions of the pi process. Installing a package is equivalent to running its author's
-  code as yourself. Read what you install. This is why every package here is pinned and why the
-  preference is scripts you can read.
-- **Not protection against prompt injection.** Untrusted content in a repository — a README, a
-  comment, a build log, a fetched page — can still ask the model to do things. The sandbox limits what
-  those actions can reach; it does not make untrusted content trustworthy.
-- **Not airtight even on its own terms.** On macOS the default config enables an unauthenticated SOCKS
-  proxy so `git` over SSH works; while the sandbox is running, another local process that discovers
-  that port can use it. The domain allow list still applies to it, but the surface exists. Likewise,
-  anything you approve once is allowed for the rest of the session, so approvals are a real decision.
-- **Not a substitute for git.** It will happily let the agent delete your uncommitted work inside the
-  project directory. Checkpoint before you let it run; see the FAQ in the README.
+The deciding measurement was the network policy. `allowedDomains` reads like an allowlist, but on
+pi-sandbox 0.6.8 it behaves as a pre-approval list: requesting hosts that are not in it still returned
+200, over both the HTTP and the SOCKS proxy, including when the hostnames were built at runtime so no
+command scan could have approved them. Traffic is funnelled through the local proxy — direct DNS fails
+— but nothing rejects an unlisted host. A security-shaped control that does not enforce is worse than
+no control, because it gets trusted.
+
+Every denial is catalogued with the generated Seatbelt rules and the reproductions in
+[SANDBOX-FAILURE-MODES.md](SANDBOX-FAILURE-MODES.md), kept as the evidence for this decision.
+
+What replaced it: nothing at the OS layer. The guardrail is process — checkpoint with git before
+delegating, read the diff rather than the summary, commit small, isolate bigger jobs in a worktree, and
+treat anything that arrives from outside the repository as untrusted input. If you want enforcement
+short of a container, `@gotgenes/pi-permission-system` (**+0** tokens) gates `read`, `write`, `edit` and
+commands in-process: no OS layer, so none of the failure classes above, and it is enforcement against a
+confused model rather than a determined one.
 
 pi itself ships no sandbox at all and its documentation is explicit that real isolation has to come
 from the OS or a virtualization/container boundary. If that is what you need — untrusted
 repositories, unattended automation, generated code you will not review — run the whole of `pi`
-inside one:
+inside one (this repo does not ship a container path; the improvements list in the README tracks it):
 
 - **Docker**: mount only the workspace (`-v "$PWD:/workspace"`), do _not_ mount the host
   `~/.pi/agent` (that exposes your credentials and sessions), pass the minimum credentials, and
@@ -264,9 +293,11 @@ inside one:
 - **Gondolin**: host `pi`, tools routed into a local Linux micro-VM (QEMU; Node ≥ 23.6).
 - **OpenShell**: policy-controlled sandbox with filesystem, process, network and credential controls.
 
-The honest summary: the sandbox configuration in this repo is worth having, costs nothing in context,
-and will stop an agent from wiping your home directory or `curl`-ing a payload with your credentials.
-It is not a reason to run untrusted code.
+The honest summary: this setup has no OS-level guardrail, and the one it had could not be made to work
+on ordinary toolchains. The substitution is process — checkpoint before delegating, read the diff,
+commit small, isolate the rest — and if you need a line that holds against a determined agent, put a
+container under pi rather than a profile around its subprocesses. `AGENTS.md` is advice; git is the
+undo.
 
 ## Reproducing the numbers
 
@@ -285,11 +316,15 @@ tools/analyze.py
 tools/analyze.py todo lens --detail      # selected scenarios, with per-tool breakdown
 ```
 
+For this repo's own configuration, `./test-bundle.sh` does the same thing in a scratch agent
+directory (no API key, nothing of yours touched) and prints the numbers for both shapes: default and
+the lean `AGENTS.md`.
+
 Dumps and run logs land in `$PI_CTX_AUDIT_HOME/out/<scenario>/` (default `~/pi-audit`). The whole
 loop is offline-friendly: set `PI_OFFLINE=1` and nothing touches the network except your own
 `pi install`.
 
 `test-bundle.sh` does the whole thing for this repo's own configuration — install into a scratch
-agent dir, dump the prompt, print the cost of the full and lean `AGENTS.md`, and confirm that the
-sandbox extension actually loaded. It needs `pi`, `node` and `python3` on `PATH` and no API key,
+agent dir, dump the prompt, print the cost of the full and lean `AGENTS.md`, and confirm that no
+sandbox layer is loaded. It needs `pi`, `node` and `python3` on `PATH` and no API key,
 because the dump happens before the auth check.

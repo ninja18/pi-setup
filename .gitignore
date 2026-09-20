@@ -10,6 +10,10 @@ settings.json.orig
 ctx-audit-out/
 pi-audit/
 
+# python bytecode from the tools/ and lib/ helpers
+__pycache__/
+*.pyc
+
 # anything pi or a package manager leaves behind locally
 node_modules/
 .pi/sessions/

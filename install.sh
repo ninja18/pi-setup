@@ -16,7 +16,6 @@ set -uo pipefail
 
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 AGENT_DIR="${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}"
-SANDBOX_PACKAGE="npm:pi-sandbox@0.6.8"
 HERDR_SKILL_TAG="v0.9.0"
 HERDR_SKILL_URL="https://raw.githubusercontent.com/herdrdev/herdr/${HERDR_SKILL_TAG}/skills/herdr/SKILL.md"
 
@@ -55,9 +54,9 @@ usage() {
   cat <<'USAGE'
 Install this pi setup into an agent directory.
 
-  ./install.sh              apply
-  ./install.sh --dry-run    show what would change, touch nothing
-  ./install.sh --help       this text
+  ./install.sh            apply
+  ./install.sh --dry-run  show what would change, touch nothing
+  ./install.sh --help     this text
 
 Reads the agent directory from $PI_CODING_AGENT_DIR (default ~/.pi/agent).
 USAGE
@@ -88,13 +87,6 @@ install_file() { # <source> <target>
   run cp "$source" "$target"
 }
 
-# Version of an installed pi package, or nothing when it is not on disk.
-package_version() { # <package dir>
-  local manifest="$1/package.json"
-  [ -f "$manifest" ] || return 1
-  python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["version"])' "$manifest" 2>/dev/null
-}
-
 is_valid_json() { python3 -c 'import json,sys; json.load(open(sys.argv[1]))' "$1" >/dev/null 2>&1; }
 
 file_size() { wc -c <"$1" | tr -d ' '; }
@@ -115,7 +107,7 @@ preflight() {
   if have rg; then
     note "ripgrep:   $(rg --version | head -1)"
   else
-    warn "ripgrep (rg) is missing - pi-sandbox refuses to start without it: brew install ripgrep"
+    note "ripgrep:   not installed (optional)"
   fi
   note "python3:   $(python3 --version)"
   note "agent dir: $AGENT_DIR"
@@ -141,21 +133,20 @@ merge_settings() {
     return
   fi
 
-  python3 "$REPO_DIR/lib/merge-settings.py" "$AGENT_DIR/settings.json" "$REPO_DIR/config/settings.json" ||
+  python3 "$REPO_DIR/lib/merge-settings.py" "$AGENT_DIR/settings.json" \
+    "$REPO_DIR/config/settings.json" ||
     problem "settings merge failed - your settings.json was left as it was"
 }
 
 install_agents_md() {
   step "Global AGENTS.md (the working agreement)"
-  install_file "$REPO_DIR/config/AGENTS.md" "$AGENT_DIR/AGENTS.md"
-  ok "$AGENT_DIR/AGENTS.md  ($(file_size "$AGENT_DIR/AGENTS.md") bytes)"
-  note "the lean variant is $(file_size "$REPO_DIR/config/AGENTS.lean.md") bytes: config/AGENTS.lean.md"
-}
 
-install_sandbox_config() {
-  step "sandbox.json (filesystem and network policy)"
-  install_file "$REPO_DIR/config/sandbox.json" "$AGENT_DIR/sandbox.json"
-  ok "$AGENT_DIR/sandbox.json"
+  local source="$REPO_DIR/config/AGENTS.md"
+
+  install_file "$source" "$AGENT_DIR/AGENTS.md"
+  ok "$AGENT_DIR/AGENTS.md  ($(file_size "$source") bytes)"
+
+  note "the lean variant is $(file_size "$REPO_DIR/config/AGENTS.lean.md") bytes: config/AGENTS.lean.md"
 }
 
 install_plan_template() {
@@ -210,33 +201,6 @@ install_herdr_skill() {
   rm -f "$staged"
 }
 
-install_sandbox_package() {
-  step "pi-sandbox (pinned to $SANDBOX_PACKAGE)"
-
-  local package_dir="$AGENT_DIR/npm/node_modules/pi-sandbox"
-  if [ -d "$package_dir" ]; then
-    ok "already installed: version $(package_version "$package_dir")"
-    return
-  fi
-
-  if [ "$DRY_RUN" = 1 ]; then
-    note "[dry-run] would run: pi install $SANDBOX_PACKAGE"
-    return
-  fi
-
-  # Run from $HOME: an inaccessible working directory makes the child process fail before it starts.
-  # No PI_OFFLINE here either - installing a package needs the network.
-  (cd "$HOME" && pi install "$SANDBOX_PACKAGE")
-
-  if [ -d "$package_dir" ]; then
-    ok "installed: version $(package_version "$package_dir")"
-  else
-    problem "pi-sandbox is not on disk, so the sandbox will not be active"
-    note "run it yourself from a valid directory: pi install $SANDBOX_PACKAGE"
-    note "a settings.json entry alone does not put any code on disk"
-  fi
-}
-
 verify_installation() {
   step "Verify"
 
@@ -248,15 +212,11 @@ verify_installation() {
   fi
 
   local file
-  for file in AGENTS.md sandbox.json prompts/plan.md skills/brave-search/brave.mjs; do
+  for file in AGENTS.md prompts/plan.md skills/brave-search/brave.mjs; do
     [ -f "$AGENT_DIR/$file" ] || problem "$file is missing"
   done
 
-  for file in settings.json sandbox.json; do
-    is_valid_json "$AGENT_DIR/$file" || problem "$AGENT_DIR/$file is not valid JSON"
-  done
-
-  have rg || warn "ripgrep is missing - pi-sandbox will refuse to start"
+  is_valid_json "$AGENT_DIR/settings.json" || problem "$AGENT_DIR/settings.json is not valid JSON"
 
   if [ -f "$AGENT_DIR/skills/herdr/SKILL.md" ]; then
     python3 "$REPO_DIR/lib/make-skill-manual.py" "$AGENT_DIR/skills/herdr/SKILL.md" --check >/dev/null ||
@@ -327,11 +287,9 @@ main() {
   create_directories
   merge_settings
   install_agents_md
-  install_sandbox_config
   install_plan_template
   install_brave_skill
   install_herdr_skill
-  install_sandbox_package
   verify_installation
   report_context_cost
   print_next_steps

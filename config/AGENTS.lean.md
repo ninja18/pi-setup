@@ -17,14 +17,15 @@ edit until I approve. Useful skills: `/skill:grill-me`, `/skill:wayfinder`, `/sk
 **Git.** Small coherent commits, imperative subjects. Never commit secrets or build output. Never
 force-push, rewrite published history, or discard unreviewed work without asking.
 
-**Network and sandbox.** Say which URL or domain you need and why in the same message as the attempt.
-Use `/skill:brave-search` for web search (do not scrape with raw `curl`). Sandboxed commands can only
-write inside the project and `/tmp` and only reach allow-listed domains: if something is blocked, stop,
-name the exact path or domain, and wait for approval - never work around it.
+**Network.** Say which URL or domain you need and why in the same message as the attempt. Use
+`/skill:brave-search` for web search (do not scrape with raw `curl`).
 
 **Boundaries.** Ask before touching infra, CI, credentials, or deployments; before adding a
 dependency; before anything irreversible or paid. Never run production migrations locally. Do not read
 or write `~/.ssh`, `~/.aws`, `~/.gnupg`, or `~/.pi`.
+
+**herdr panes.** Separate processes with your full user rights, outside pi's control. Never use
+`herdr pane run` / `send-text` for destructive commands unless I ask; prefer starting `pi` in a pane.
 
 **Reporting.** Lead with what changed, then what you verified, then what is left or uncertain. No
 filler, no restating the request. Say "not verified" when you did not check it.

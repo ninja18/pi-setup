@@ -54,7 +54,7 @@ Self-test for this repo's configuration.
   ./test-bundle.sh --keep     keep the scratch directory for inspection
   ./test-bundle.sh --help     this text
 
-Needs pi, node, python3 and (for the sandbox) ripgrep on PATH. No API key required.
+Needs pi, node and python3 on PATH. No API key required.
 USAGE
 }
 
@@ -143,7 +143,7 @@ assert_registered() { # <dump dir> <name> <label>
 check_environment() {
   section "environment"
   local tool
-  for tool in pi node python3 rg; do
+  for tool in pi node python3; do
     if command -v "$tool" >/dev/null 2>&1; then
       info "$tool" "$("$tool" --version 2>&1 | head -1)"
     else
@@ -172,28 +172,26 @@ test_dry_run() {
   sed -n '1,14p' "$SCRATCH/dry-run.log"
 }
 
-# The real install, into the scratch agent directory.
 test_install() {
-  section "2. install.sh into $AGENT_DIR"
+  section "2. install.sh"
   if bash "$REPO_DIR/install.sh" >"$SCRATCH/install.log" 2>&1; then
     pass "install exits 0"
   else
     fail "install exited non-zero (see $SCRATCH/install.log)"
   fi
-  tail -20 "$SCRATCH/install.log"
+  tail -12 "$SCRATCH/install.log"
 
   assert_file "$AGENT_DIR/AGENTS.md" "global AGENTS.md installed"
-  assert_file "$AGENT_DIR/sandbox.json" "sandbox.json installed"
   assert_file "$AGENT_DIR/prompts/plan.md" "plan template installed"
   assert_file "$AGENT_DIR/skills/brave-search/brave.mjs" "brave-search script installed"
-  assert_file "$AGENT_DIR/npm/node_modules/pi-sandbox/package.json" "pi-sandbox installed on disk"
+
+  assert_contains "$AGENT_DIR/settings.json" "\"theme\"" "settings.json merged by default"
 }
 
 show_agent_dir() {
   section "3. resulting agent directory"
+  printf '\n--- default install: %s\n' "$AGENT_DIR"
   find "$AGENT_DIR" -maxdepth 2 -not -path "*/npm/*" | sort
-  printf '\n--- settings.json\n'
-  cat "$AGENT_DIR/settings.json"
   printf '\n--- herdr skill frontmatter (must be user-invoked)\n'
   head -6 "$AGENT_DIR/skills/herdr/SKILL.md" 2>/dev/null || note "(herdr skill not installed)"
   printf '\n--- pi list\n'
@@ -257,19 +255,20 @@ test_brave_script() {
 }
 
 # Attach the audit harness and the project templates, so the next dump shows the full configuration.
-prepare_prompt_dump() {
-  cp "$REPO_DIR/tools/ctx-audit.ts" "$AGENT_DIR/extensions/ctx-audit.ts"
+prepare_prompt_dump() { # <agent dir>
+  cp "$REPO_DIR/tools/ctx-audit.ts" "$1/extensions/ctx-audit.ts"
   cp "$REPO_DIR/templates/project/AGENTS.md" "$WORK_DIR/AGENTS.md"
   cp "$REPO_DIR/templates/project/TODO.md" "$WORK_DIR/TODO.md"
   git init -q "$WORK_DIR" 2>/dev/null
 }
 
-# Run pi once against the current agent dir and dump what it assembles.
-dump_prompt() { # <out dir>
+# Run pi once against an agent dir and dump what it assembles.
+dump_prompt() { # <agent dir> <out dir>
   (cd "$WORK_DIR" &&
-    PI_CTX_AUDIT_DIR="$1" PI_OFFLINE=1 PI_SKIP_VERSION_CHECK=1 timeout 120 pi -p "noop" >"$1.log" 2>&1)
+    PI_CODING_AGENT_DIR="$1" PI_CTX_AUDIT_DIR="$2" PI_OFFLINE=1 PI_SKIP_VERSION_CHECK=1 \
+      timeout 120 pi -p "noop" >"$2.log" 2>&1)
   # pi exits non-zero without credentials; the dump is written before that check.
-  [ -f "$1/system-prompt.session-start.txt" ]
+  [ -f "$2/system-prompt.session-start.txt" ]
 }
 
 # Report the cost of a dump and assert the expected surfaces loaded.
@@ -282,25 +281,24 @@ report_dump() { # <out dir> <label> <agents variant marker>
   assert_file "$out/system-prompt.session-start.txt" "$label: prompt dump written"
   assert_contains "$out/system-prompt.session-start.txt" "$marker" "$label: AGENTS.md content reached the prompt"
   assert_contains "$out/system-prompt.session-start.txt" "TODO.md" "$label: TODO convention reached the prompt"
-  assert_registered "$out" "sandbox" "$label: sandbox extension loaded"
   assert_registered "$out" "plan" "$label: /plan template registered"
   assert_registered "$out" "skill:brave-search" "$label: brave-search skill registered"
 }
 
-test_full_configuration() {
-  section "5. what pi assembles (full AGENTS.md)"
-  if dump_prompt "$SCRATCH/out-full"; then
-    report_dump "$SCRATCH/out-full" "full AGENTS.md" "working agreement"
+test_default_configuration() {
+  section "5. what pi assembles"
+  if dump_prompt "$AGENT_DIR" "$SCRATCH/out-default"; then
+    report_dump "$SCRATCH/out-default" "default install" "working agreement"
   else
-    fail "no prompt dump written (see $SCRATCH/out-full.log)"
-    tail -5 "$SCRATCH/out-full.log" 2>/dev/null
+    fail "no prompt dump written (see $SCRATCH/out-default.log)"
+    tail -5 "$SCRATCH/out-default.log" 2>/dev/null
   fi
 }
 
 test_lean_variant() {
   section "6. the lean AGENTS.md variant"
   cp "$REPO_DIR/config/AGENTS.lean.md" "$AGENT_DIR/AGENTS.md"
-  if dump_prompt "$SCRATCH/out-lean"; then
+  if dump_prompt "$AGENT_DIR" "$SCRATCH/out-lean"; then
     report_dump "$SCRATCH/out-lean" "lean AGENTS.md" "Real code that ships"
   else
     fail "no prompt dump written for the lean variant"
@@ -320,8 +318,8 @@ main() {
   test_install
   show_agent_dir
   test_brave_script
-  prepare_prompt_dump
-  test_full_configuration
+  prepare_prompt_dump "$AGENT_DIR"
+  test_default_configuration
   test_lean_variant
 
   finish

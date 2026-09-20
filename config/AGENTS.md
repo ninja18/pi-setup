@@ -50,17 +50,12 @@ Keep the working plan in `TODO.md` at the repository root, in exactly this shape
   work I have not reviewed. Ask first for anything that discards work.
 - Do not amend or rebase my commits unless I ask.
 
-## Network and sandbox
+## Network
 
 - Prefer local information. Before any request to the network, say which URL or domain you need and
   why, in the same message as the attempt.
 - For web search use the `brave-search` skill: `/skill:brave-search <query>` (script:
   `~/.pi/agent/skills/brave-search/brave.mjs`). Do not scrape search engines with raw `curl`.
-- A sandboxed command (`bash`, `!` commands) runs under an OS sandbox: writes are limited to the
-  project and `/tmp`, reads outside the project prompt me first, and only allow-listed domains are
-  reachable. If something is blocked, do not work around it. Say what was blocked, name the exact
-  path or domain you need, and wait - I will approve it through the prompt or add it to
-  `~/.pi/agent/sandbox.json` deliberately.
 
 ## Boundaries
 
@@ -68,6 +63,13 @@ Keep the working plan in `TODO.md` at the repository root, in exactly this shape
 - Ask before adding a dependency, changing a lockfile, or running anything that costs money.
 - Never run production migrations, deploys, or destructive data operations locally.
 - Do not read or write `~/.ssh`, `~/.aws`, `~/.gnupg`, or `~/.pi` contents unless I explicitly ask.
+
+## herdr panes
+
+- Panes are separate processes running with your full user rights, outside pi's control: nothing in
+  this file constrains what they run, and pi cannot undo it. Never use `herdr pane run` or
+  `send-text` for destructive commands unless I ask for them.
+- Prefer starting `pi` in a pane (or `herdr agent start pi`) over sending raw shell text to one.
 
 ## Reporting
 

@@ -37,8 +37,7 @@ in error output. Create a key at https://api-dashboard.search.brave.com/.
   recent result over a stale one; check the `age` field before trusting a version number.
 - When you use a result, cite it: give the URL in your answer.
 - If a search returns nothing useful, reword once. Do not loop on the same query.
-- In a sandboxed session only allow-listed domains are reachable (`api.search.brave.com` is on the
-  list). If a fetch of another host is blocked, say which host you need and wait for approval.
+- Network failures: report the host and the error rather than retrying in a loop.
 
 ## Limits
 
