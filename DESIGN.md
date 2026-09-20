@@ -22,19 +22,20 @@ So the design goal was: **get the behavioural rails, without paying for tool sch
 
 ## Principles
 
-0. **Maintain Pi philosophy**. Add features to the developer's behaviour instead of context bloat.
-1. **Files before extensions.** A rule in `AGENTS.md`, a convention in `TODO.md`, a template in
+1. **Maintain Pi philosophy**. Add features to the developer's behaviour instead of context bloat.
+2. **Easier to maintain**. Pi is customisable, but this setup aims to make it rare that you comeback and tweak settings often.
+3. **Files before extensions.** A rule in `AGENTS.md`, a convention in `TODO.md`, a template in
    `prompts/` costs a fixed, small number of tokens — or zero until invoked — and works in every
    harness that reads markdown. An extension costs a tool schema on every request forever.
-2. **Progressive disclosure where possible.** Skills put only their name and description in the
+4. **Progressive disclosure where possible.** Skills put only their name and description in the
    prompt; the body loads when the skill is used. `disable-model-invocation: true` removes even the
    description, leaving the skill callable by you via `/skill:<name>`.
-3. **Zero-cost invocation paths win ties.** Prompt templates and user-invoked skills measure at
+5. **Zero-cost invocation paths win ties.** Prompt templates and user-invoked skills measure at
    exactly `+0`. Plan mode, by contrast, is a state machine that must be resident.
-4. **Advice where you can, enforcement where advice fails.** Instructions in `AGENTS.md` handle
+6. **Advice where you can, enforcement where advice fails.** Instructions in `AGENTS.md` handle
    ~90% of desired behaviour for a few hundred tokens. The remaining 10% — filesystem writes,
    network reach — has to be enforced outside the model, which is what the sandbox is for.
-5. **Measure on your own machine.** Adoption numbers tell you a package is maintained; they tell you
+7. **Measure on your own machine.** Adoption numbers tell you a package is maintained; they tell you
    nothing about what it costs you. The harness in `tools/` answers that in a couple of minutes.
 
 ## How each choice was made

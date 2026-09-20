@@ -254,6 +254,7 @@ Considered, deliberately not built yet.
   installs the upstream skill (by pi's author) into `~/.agents/skills/`, which pi reads, tracked in
   `~/.agents/.skill-lock.json`, and drops our vendored `brave.mjs`. During research this worked, at the
   cost of an `npm install` in the skill dir and `BRAVE_API_KEY` instead of the Keychain lookup.
+- **Add external memory** - to capture project details and quirks beyond what the Agents.md and TODO.md captures.
 - **Tune `config/sandbox.json` from real usage** — after a few weeks fold the approvals you actually
   granted into deliberate defaults, drop the one-off mistakes, and revisit `allowLocalBinding`,
   `permissionPromptTimeoutSeconds` (600 s is generous) and what belongs in `denyWrite`.
