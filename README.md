@@ -19,7 +19,7 @@ extensions were deliberately left out are in **[DESIGN.md](DESIGN.md)**.
 | Plan before editing      | `prompts/plan.md` → `/plan` (a template, not a mode)                     | **0**                       |
 | Track multi-step work    | a `TODO.md` convention in `AGENTS.md`                                    | part of the ~910-token file |
 | Web search + fetch       | `skills/brave-search/` — dependency-free script, Keychain-backed API key | ~110 (skill description)    |
-| Delegate to subagents    | `skills/herdr-subagents/` — disposable or persistent Pi children         | **0** (user-invoked)      |
+| Delegate to subagents    | `skills/herdr-subagents/` — disposable or persistent Pi children         | **0** (user-invoked)        |
 | A stable default posture | `settings.json`, `env.example.sh`                                        | 0                           |
 
 `/skill:herdr-subagents` defaults to an ephemeral child (`pi --no-session`, capture the answer,
@@ -51,10 +51,6 @@ git clone <this-repo> ~/pi-setup
 cd ~/pi-setup
 ./install.sh --dry-run        # see exactly what would change
 ./install.sh                  # apply the full setup
-
-# Existing setup: install or update only the custom subagent skill
-./install.sh --skill-only --dry-run
-./install.sh --skill-only
 ```
 
 Nothing sandbox-related is installed, because this setup does not ship a sandbox layer — see
@@ -62,9 +58,7 @@ Nothing sandbox-related is installed, because this setup does not ship a sandbox
 
 `install.sh` is idempotent. It skips identical files, **merges** `settings.json` — your
 `defaultModel`, `defaultProvider` and anything else already there survive; this repo's keys win only
-where they overlap — and backs up a file only when its content will change. `--skill-only` touches
-only `~/.pi/agent/skills/herdr-subagents/SKILL.md`, so it is the safe path for an already-configured
-Pi installation.
+where they overlap — and backs up a file only when its content will change.
 `--dry-run` shows every step without writing anything (and verifies nothing, because nothing was written);
 `--help` prints usage. It exits non-zero if a file fails to install or a config ends up invalid, so it is safe to chain in a setup script.
 
@@ -107,11 +101,9 @@ pi                                    # inside a project
 **asserts** what loaded: the base files, that `/plan`, `brave-search`, and `herdr-subagents`
 registered, that both skills have the intended invocation mode, that each `AGENTS.md` variant reached
 the prompt, that **no** sandbox layer is present, and that the Brave script fails cleanly on a bad
-token. It also runs `--skill-only` twice against an existing scratch setup to prove the mode changes
-no unrelated file and creates no backup on an identical second run. It prints the measured token cost
-for both `AGENTS.md` shapes, exits non-zero if any check fails, and takes `--keep` to preserve the
-scratch directory for inspection. It needs `pi`, `node` and `python3` on `PATH`, and no API key — the
-prompt is dumped before the auth check.
+token. It prints the measured token cost for both `AGENTS.md` shapes, exits non-zero if any check
+fails, and takes `--keep` to preserve the scratch directory for inspection. It needs `pi`, `node` and
+`python3` on `PATH`, and no API key — the prompt is dumped before the auth check.
 
 ## Files
 
@@ -162,15 +154,11 @@ schemas, re-sent on every request. Full table in [DESIGN.md](DESIGN.md#results-p
 | `pi-web-access`                                    | —        | +2899      |
 | `pi-lens` at full width (17 tools)                 | —        | +5402      |
 | `pi-subagents`                                     | —        | +5918      |
+| `pi-herdsman`                                      | 5472     | +2343      |
 | "install everything" (all of the above)            | 16735    | +15419     |
 
 The extension rows are deltas over bare pi, measured in [DESIGN.md](DESIGN.md#results-pi-0851);
 add one to whichever baseline above you are actually running.
-
-`pi-herdsman@0.14.2` was tested separately on its compatible Pi 0.87.1 range: prefill increased from
-**3129 to 5472**, or **+2343 / +74.9%**. It cleaned up completed child panes but intentionally kept
-child Pi sessions. For basic orchestration, that resident cost is why this repo uses the zero-cost
-`herdr-subagents` skill instead. See the [full evaluation](DESIGN.md#pi-herdsman-evaluation-pi-0871).
 
 The two line items worth understanding: the global `AGENTS.md` is ~910 tokens of the ~1847, and the
 project `AGENTS.md` template is now the second largest at ~512 (it was ~267 before it was made

@@ -18,7 +18,6 @@ REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 AGENT_DIR="${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}"
 
 DRY_RUN=0
-SKILL_ONLY=0
 SHOW_HELP=0
 WARNINGS=0
 ERRORS=0
@@ -53,10 +52,9 @@ usage() {
   cat <<'USAGE'
 Install this pi setup into an agent directory.
 
-  ./install.sh               apply the full setup
-  ./install.sh --skill-only  install/update only herdr-subagents
-  ./install.sh --dry-run     show what would change, touch nothing
-  ./install.sh --help        this text
+  ./install.sh            apply the full setup
+  ./install.sh --dry-run  show what would change, touch nothing
+  ./install.sh --help     this text
 
 Reads the agent directory from $PI_CODING_AGENT_DIR (default ~/.pi/agent).
 USAGE
@@ -103,13 +101,6 @@ preflight() {
   step "Preflight"
 
   have python3 || die "python3 is required by this installer."
-
-  if [ "$SKILL_ONLY" = 1 ]; then
-    note "mode:      herdr-subagents skill only"
-    note "python3:   $(python3 --version)"
-    note "agent dir: $AGENT_DIR"
-    return
-  fi
 
   have pi || die "pi is not on PATH. Install it first:
        npm install -g --ignore-scripts @earendil-works/pi-coding-agent"
@@ -216,16 +207,6 @@ verify_installation() {
   [ "$ERRORS" = 0 ] && ok "all files present and valid"
 }
 
-verify_skill_only_installation() {
-  step "Verify"
-  if [ "$DRY_RUN" = 1 ]; then
-    note "[dry-run] skipped: nothing was written"
-    return
-  fi
-  verify_herdr_subagents_skill
-  [ "$ERRORS" = 0 ] && ok "herdr-subagents is present and user-invoked"
-}
-
 report_context_cost() {
   step "Measured context cost"
   [ "$DRY_RUN" = 1 ] && return
@@ -261,18 +242,6 @@ NEXT
   fi
 }
 
-print_skill_only_next_steps() {
-  cat <<NEXT
-
-== Installed
-   /skill:herdr-subagents
-   - ephemeral mode: pi --no-session, capture result, close the child pane
-   - persistent mode: named Pi session, leave the child pane open for follow-ups
-
-   Requires Pi to be running inside Herdr with the Pi integration installed.
-NEXT
-}
-
 # --------------------------------------------------------------------------------------
 # entry point
 # --------------------------------------------------------------------------------------
@@ -281,7 +250,6 @@ parse_args() {
   while [ $# -gt 0 ]; do
     case "$1" in
       --dry-run) DRY_RUN=1 ;;
-      --skill-only) SKILL_ONLY=1 ;;
       -h | --help) SHOW_HELP=1 ;;
       *) die "unknown option: $1 (try --help)" ;;
     esac
@@ -297,15 +265,6 @@ main() {
   fi
 
   preflight
-
-  if [ "$SKILL_ONLY" = 1 ]; then
-    install_herdr_subagents_skill
-    verify_skill_only_installation
-    print_skill_only_next_steps
-    [ "$ERRORS" = 0 ] || exit 2
-    return
-  fi
-
   create_directories
   merge_settings
   install_agents_md
