@@ -19,8 +19,12 @@ extensions were deliberately left out are in **[DESIGN.md](DESIGN.md)**.
 | Plan before editing      | `prompts/plan.md` → `/plan` (a template, not a mode)                     | **0**                       |
 | Track multi-step work    | a `TODO.md` convention in `AGENTS.md`                                    | part of the ~910-token file |
 | Web search + fetch       | `skills/brave-search/` — dependency-free script, Keychain-backed API key | ~110 (skill description)    |
-| Delegate to subagents    | herdr's own skill, installed **user-invoked** as `/skill:herdr`          | **0**                       |
+| Delegate to subagents    | `skills/herdr-subagents/` — disposable or persistent Pi children         | **0** (user-invoked)      |
 | A stable default posture | `settings.json`, `env.example.sh`                                        | 0                           |
+
+`/skill:herdr-subagents` defaults to an ephemeral child (`pi --no-session`, capture the answer,
+close its pane). Its persistent mode creates a named Pi session and deliberately leaves the pane open
+for follow-up prompts in that branch.
 
 **No sandbox layer, deliberately.** `pi-sandbox` was removed after an evaluation: its failures cannot
 be fixed in its config (a process started in one tool call cannot be signalled from a later one;
@@ -46,16 +50,21 @@ with the full catalogue in [SANDBOX-FAILURE-MODES.md](SANDBOX-FAILURE-MODES.md).
 git clone <this-repo> ~/pi-setup
 cd ~/pi-setup
 ./install.sh --dry-run        # see exactly what would change
-./install.sh                  # apply
+./install.sh                  # apply the full setup
+
+# Existing setup: install or update only the custom subagent skill
+./install.sh --skill-only --dry-run
+./install.sh --skill-only
 ```
 
 Nothing sandbox-related is installed, because this setup does not ship a sandbox layer — see
 [why](DESIGN.md#no-sandbox-layer-why-pi-sandbox-is-not-included).
 
-`install.sh` is idempotent. It **merges** `settings.json` — your `defaultModel`, `defaultProvider`
-and anything else already there survive; this repo's keys win only where they overlap — and it backs
-up every file it replaces with a `.bak.<timestamp>` suffix. Re-run it after installing herdr to pick
-up the release-matched skill.
+`install.sh` is idempotent. It skips identical files, **merges** `settings.json` — your
+`defaultModel`, `defaultProvider` and anything else already there survive; this repo's keys win only
+where they overlap — and backs up a file only when its content will change. `--skill-only` touches
+only `~/.pi/agent/skills/herdr-subagents/SKILL.md`, so it is the safe path for an already-configured
+Pi installation.
 `--dry-run` shows every step without writing anything (and verifies nothing, because nothing was written);
 `--help` prints usage. It exits non-zero if a file fails to install or a config ends up invalid, so it is safe to chain in a setup script.
 
@@ -66,9 +75,9 @@ Then, once:
 2. **Brave key.** `pbpaste | node ~/.pi/agent/skills/brave-search/brave.mjs setkey`
    This stores the token in the macOS Keychain. `keyinfo` tells you where the key came from without
    printing it.
-3. **herdr (optional).** `brew install herdr`, then Herdr → Settings → Integrations → install the Pi
-   integration, and check `herdr integration status`. Re-run `./install.sh` afterwards so the skill
-   matches your herdr release.
+3. **Herdr (for subagents).** `brew install herdr`, then Herdr → Settings → Integrations → install
+   the Pi integration, and check `herdr integration status`. Start Pi inside Herdr before invoking
+   `/skill:herdr-subagents`.
 4. **Optional shell environment.** `echo 'source ~/pi-setup/env.example.sh' >> ~/.zshrc` — that file
    ships with everything commented out.
 
@@ -89,16 +98,20 @@ prompt once per repo (or run `/trust`).
 pi                                    # inside a project
 /plan  add a health endpoint          # expands the template, explores read-only
 /skill:brave-search  pi 0.85 changelog
-/skill:herdr                          # only meaningful inside herdr
+/skill:herdr-subagents  run an ephemeral research child
+/skill:herdr-subagents  keep a persistent child for follow-ups
 /todos                                # NOT available - there is no todo extension, by design
 ```
 
 `./test-bundle.sh` installs the configuration into a scratch agent directory, runs pi against it, and
-**asserts** what loaded: the base files, that `/plan` and both skills registered, that each `AGENTS.md`
-variant reached the prompt, that **no** sandbox layer is present, and that the Brave script fails
-cleanly on a bad token. It prints the measured token cost for both `AGENTS.md` shapes, exits non-zero if
-any check fails, and takes `--keep` to preserve the scratch directory for inspection. It needs `pi`,
-`node` and `python3` on `PATH`, and no API key — the prompt is dumped before the auth check.
+**asserts** what loaded: the base files, that `/plan`, `brave-search`, and `herdr-subagents`
+registered, that both skills have the intended invocation mode, that each `AGENTS.md` variant reached
+the prompt, that **no** sandbox layer is present, and that the Brave script fails cleanly on a bad
+token. It also runs `--skill-only` twice against an existing scratch setup to prove the mode changes
+no unrelated file and creates no backup on an identical second run. It prints the measured token cost
+for both `AGENTS.md` shapes, exits non-zero if any check fails, and takes `--keep` to preserve the
+scratch directory for inspection. It needs `pi`, `node` and `python3` on `PATH`, and no API key — the
+prompt is dumped before the auth check.
 
 ## Files
 
@@ -109,6 +122,7 @@ config/AGENTS.md           ~/.pi/agent/AGENTS.md   - full working agreement
 config/AGENTS.lean.md      same rules, less prose  - swap in if you want the tokens back
 prompts/plan.md            ~/.pi/agent/prompts/plan.md - /plan template
 skills/brave-search/       ~/.pi/agent/skills/brave-search/ - SKILL.md + brave.mjs
+skills/herdr-subagents/     ~/.pi/agent/skills/herdr-subagents/ - two-mode Herdr orchestration
 templates/project/         copy into each repo: AGENTS.md + TODO.md
 tools/                     context audit harness: measure what a package costs before adopting it
 lib/                       helper scripts used by install.sh
@@ -153,6 +167,11 @@ schemas, re-sent on every request. Full table in [DESIGN.md](DESIGN.md#results-p
 The extension rows are deltas over bare pi, measured in [DESIGN.md](DESIGN.md#results-pi-0851);
 add one to whichever baseline above you are actually running.
 
+`pi-herdsman@0.14.2` was tested separately on its compatible Pi 0.87.1 range: prefill increased from
+**3129 to 5472**, or **+2343 / +74.9%**. It cleaned up completed child panes but intentionally kept
+child Pi sessions. For basic orchestration, that resident cost is why this repo uses the zero-cost
+`herdr-subagents` skill instead. See the [full evaluation](DESIGN.md#pi-herdsman-evaluation-pi-0871).
+
 The two line items worth understanding: the global `AGENTS.md` is ~910 tokens of the ~1847, and the
 project `AGENTS.md` template is now the second largest at ~512 (it was ~267 before it was made
 language-agnostic). `AGENTS.lean.md` exists as a drop-in if you want most of the first one back.
@@ -184,7 +203,7 @@ workflow. Concretely:
 ```bash
 rm ~/.pi/agent/AGENTS.md
 rm ~/.pi/agent/prompts/plan.md
-rm -rf ~/.pi/agent/skills/brave-search ~/.pi/agent/skills/herdr
+rm -rf ~/.pi/agent/skills/brave-search ~/.pi/agent/skills/herdr-subagents
 ls ~/.pi/agent/*.bak.* ~/.pi/agent/settings.json.orig   # closest backups of what was replaced
 ```
 

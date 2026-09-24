@@ -33,8 +33,8 @@ def main() -> int:
     print("   free until used:")
     row("brave-search skill", f"{agent}/skills/brave-search/SKILL.md",
         "only its description is in the prompt; the body loads on use")
-    row("herdr skill", f"{agent}/skills/herdr/SKILL.md",
-        "user-invoked: 0 in the prompt, body loads on /skill:herdr")
+    row("herdr-subagents skill", f"{agent}/skills/herdr-subagents/SKILL.md",
+        "user-invoked: 0 in the prompt, body loads on /skill:herdr-subagents")
     row("plan template", f"{agent}/prompts/plan.md", "0 in the prompt, expands on /plan")
     print("   measured end to end with: ./test-bundle.sh")
     return 0

@@ -45,7 +45,7 @@ So the design goal was: **get the behavioural rails, without paying for tool sch
 | ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Plan before editing          | Plannotator plan mode **+481** (browser approval gate, 2 tools) · `@narumitw/pi-plan-mode` **+478** · prompt template **+0** · mattpocock `grill-me`/`wayfinder`/`to-spec`/`implement` skills **+0** | `/plan` prompt template (+0), skills when wanted | A template costs nothing and produces the same artefact — a written plan you approve. Skills are already `disable-model-invocation: true`, so adopting them later is free too.                                                                                                                                                                 |
 | Track multi-step work        | `@juicesharp/rpiv-todo` **+904** (tool schema 474 + 430 guidance) · `TODO.md` convention in `AGENTS.md` **+202**                                                                                     | `TODO.md` file                                   | 4.5× cheaper, survives new sessions and compaction, visible in git, works in any other agent you use.                                                                                                                                                                                                                                          |
-| Delegate to subagents        | `pi-subagents` **+5918** · `pi-herdr-subagents` **+2118** · herdr's own skill **+0**                                                                                                                 | herdr skill, invoked on demand                   | herdr already gives real terminal panes and lifecycle state for pi; the skill is user-invoked, so it costs nothing until you ask for help with panes.                                                                                                                                                                                          |
+| Delegate to subagents        | `pi-subagents` **+5918** · `pi-herdr-subagents` **+2118** · `pi-herdsman` **+2343 / +74.9% prefill** on compatible Pi 0.87.1 · custom Herdr skill **+0** | custom `herdr-subagents` skill, invoked on demand | Basic orchestration needs two paths only: disposable children that leave no Pi session and persistent branches whose panes stay open. The user-invoked skill supplies both for zero steady-state context; the broader Herdsman tool surface is not resident on every request. |
 | Web search + fetch           | `pi-web-access` **+2899** · `pi-mcp-adapter` + a Brave MCP server **+1077** · Brave skill + script **~+110**                                                                                         | skill + dependency-free script                   | You already pay for a search API. 26× cheaper than `pi-web-access`, no MCP server to keep running.                                                                                                                                                                                                                                             |
 | Constrain writes and network | `pi-sandbox` **+0** · `@gotgenes/pi-permission-system` **+0** · container/VM (separate concern)                                                                                                      | **nothing** — measured, then rejected               | Both cost zero prompt tokens because they wrap `bash` and gate the file tools instead of registering new tools. `pi-sandbox` was installed and used for real work before being removed: the failures it produces cannot be configured away, and making toolchains build inside it needed per-toolchain workarounds. See [No sandbox layer](#no-sandbox-layer-why-pi-sandbox-is-not-included).                                                                             |
 | Instructions to the model    | One big `AGENTS.md` vs a leaner one                                                                                                                                                                  | Both shipped                                     | The full file is ~910 tokens/turn, the lean variant ~480. It is the single largest line item in the whole setup, so the choice belongs to you rather than to a default.                                                                                                                                                                        |
@@ -135,6 +135,36 @@ Reading the table:
 - Cost is not quality, and free is not free. The cheapest layers are the ones that wrap `bash` or
   ship markdown rather than tool schemas — which is why a guardrail looks like a bargain, and why
   `pi-sandbox` still had to be judged on its behaviour and removed.
+
+### `pi-herdsman` evaluation (Pi 0.87.1)
+
+`pi-herdsman@0.14.2` was measured separately because it declares Pi compatibility only for
+`>=0.87.0 <0.88.0`; mixing those numbers into the Pi 0.85.1 table would imply a comparison the tool
+does not support.
+
+| Scenario | Prefill | Change |
+| --- | ---: | ---: |
+| compatible Pi baseline | **3129** | — |
+| baseline + `pi-herdsman` | **5472** | **+2343 / +74.9%** |
+
+The increase came from orchestration instructions plus five always-active coordination tools:
+`agent`, `chief`, `peer`, `staff`, and `ask_owner`. The lifecycle test confirmed that a completed
+managed child pane is cleaned up, while the child's Pi session is intentionally retained for later
+continuation. Pane cleanup therefore does not prevent session-history accumulation.
+
+That trade is reasonable when nested delegation, peer messaging, steering, supervision, recovery,
+and managed-assignment semantics are routine. It is not reasonable for this setup's usual need:
+start an independent child, collect its answer, and clean it up — or deliberately keep one named
+branch alive for follow-up prompts.
+
+The bundled `herdr-subagents` skill implements those two paths directly:
+
+- **ephemeral:** start Pi with `--no-session`, capture the result, then close the created pane;
+- **persistent:** start a named normal Pi session, report its pane/session identifiers, and leave the
+  pane open until the user explicitly ends the branch.
+
+The skill has `disable-model-invocation: true`, so its steady-state prefill cost is **0**. It gives up
+the broader Herdsman protocol deliberately rather than reimplementing it in markdown.
 
 ## Why certain things were not added
 

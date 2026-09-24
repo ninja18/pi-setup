@@ -23,6 +23,7 @@ REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 KEEP_SCRATCH=0
 SCRATCH=""
 AGENT_DIR=""
+SKILL_ONLY_AGENT_DIR=""
 WORK_DIR=""
 CHECKS=0
 FAILURES=0
@@ -82,8 +83,9 @@ parse_args() {
 setup_scratch() {
   SCRATCH="$(mktemp -d "${TMPDIR:-/tmp}/pi-setup-test.XXXXXX")"
   AGENT_DIR="$SCRATCH/agent"
+  SKILL_ONLY_AGENT_DIR="$SCRATCH/skill-only-agent"
   WORK_DIR="$SCRATCH/work"
-  mkdir -p "$AGENT_DIR" "$WORK_DIR"
+  mkdir -p "$AGENT_DIR" "$SKILL_ONLY_AGENT_DIR" "$WORK_DIR"
   cd "$SCRATCH" || exit 1 # never stand inside a directory this script deletes
   trap cleanup EXIT
 }
@@ -123,6 +125,14 @@ assert_contains() { # <file> <needle> <label>
     pass "$2"
   else
     fail "$2 (not found in $(basename "$1"))"
+  fi
+}
+
+assert_not_contains() { # <file> <needle> <label>
+  if grep -qF -- "$2" "$1" 2>/dev/null; then
+    fail "$3 (unexpected text found in $(basename "$1"))"
+  else
+    pass "$3"
   fi
 }
 
@@ -172,8 +182,76 @@ test_dry_run() {
   sed -n '1,14p' "$SCRATCH/dry-run.log"
 }
 
+# Prove an existing setup can receive only the new skill, and that a second run is a no-op.
+test_skill_only_install() {
+  section "2. install.sh --skill-only"
+
+  mkdir -p "$SKILL_ONLY_AGENT_DIR/prompts"
+  printf '%s\n' 'existing agents file' >"$SKILL_ONLY_AGENT_DIR/AGENTS.md"
+  printf '%s\n' '{"existing": true}' >"$SKILL_ONLY_AGENT_DIR/settings.json"
+  printf '%s\n' 'existing prompt' >"$SKILL_ONLY_AGENT_DIR/prompts/plan.md"
+  cp "$SKILL_ONLY_AGENT_DIR/AGENTS.md" "$SCRATCH/expected-AGENTS.md"
+  cp "$SKILL_ONLY_AGENT_DIR/settings.json" "$SCRATCH/expected-settings.json"
+  cp "$SKILL_ONLY_AGENT_DIR/prompts/plan.md" "$SCRATCH/expected-plan.md"
+
+  if PI_CODING_AGENT_DIR="$SKILL_ONLY_AGENT_DIR" \
+    bash "$REPO_DIR/install.sh" --skill-only --dry-run >"$SCRATCH/skill-only-dry.log" 2>&1; then
+    pass "skill-only dry run exits 0"
+  else
+    fail "skill-only dry run exited non-zero"
+  fi
+  if [ ! -e "$SKILL_ONLY_AGENT_DIR/skills/herdr-subagents/SKILL.md" ]; then
+    pass "skill-only dry run wrote nothing"
+  else
+    fail "skill-only dry run installed the skill"
+  fi
+
+  if PI_CODING_AGENT_DIR="$SKILL_ONLY_AGENT_DIR" \
+    bash "$REPO_DIR/install.sh" --skill-only >"$SCRATCH/skill-only-first.log" 2>&1; then
+    pass "skill-only install exits 0"
+  else
+    fail "skill-only install exited non-zero"
+  fi
+
+  assert_file "$SKILL_ONLY_AGENT_DIR/skills/herdr-subagents/SKILL.md" \
+    "skill-only mode installed herdr-subagents"
+  if cmp -s "$REPO_DIR/skills/herdr-subagents/SKILL.md" \
+    "$SKILL_ONLY_AGENT_DIR/skills/herdr-subagents/SKILL.md"; then
+    pass "installed skill matches the repository"
+  else
+    fail "installed skill differs from the repository"
+  fi
+  if cmp -s "$SCRATCH/expected-AGENTS.md" "$SKILL_ONLY_AGENT_DIR/AGENTS.md" && \
+    cmp -s "$SCRATCH/expected-settings.json" "$SKILL_ONLY_AGENT_DIR/settings.json" && \
+    cmp -s "$SCRATCH/expected-plan.md" "$SKILL_ONLY_AGENT_DIR/prompts/plan.md"; then
+    pass "skill-only mode left the existing setup untouched"
+  else
+    fail "skill-only mode changed an unrelated setup file"
+  fi
+
+  local before after
+  before="$(cksum "$SKILL_ONLY_AGENT_DIR/skills/herdr-subagents/SKILL.md")"
+  if PI_CODING_AGENT_DIR="$SKILL_ONLY_AGENT_DIR" \
+    bash "$REPO_DIR/install.sh" --skill-only >"$SCRATCH/skill-only-second.log" 2>&1; then
+    pass "second skill-only install exits 0"
+  else
+    fail "second skill-only install exited non-zero"
+  fi
+  after="$(cksum "$SKILL_ONLY_AGENT_DIR/skills/herdr-subagents/SKILL.md")"
+  if [ "$before" = "$after" ] && grep -qF "unchanged:" "$SCRATCH/skill-only-second.log"; then
+    pass "second skill-only install is unchanged"
+  else
+    fail "second skill-only install was not a no-op"
+  fi
+  if ! compgen -G "$SKILL_ONLY_AGENT_DIR/skills/herdr-subagents/*.bak.*" >/dev/null; then
+    pass "identical re-install created no backup"
+  else
+    fail "identical re-install created an unnecessary backup"
+  fi
+}
+
 test_install() {
-  section "2. install.sh"
+  section "3. install.sh"
   if bash "$REPO_DIR/install.sh" >"$SCRATCH/install.log" 2>&1; then
     pass "install exits 0"
   else
@@ -184,16 +262,21 @@ test_install() {
   assert_file "$AGENT_DIR/AGENTS.md" "global AGENTS.md installed"
   assert_file "$AGENT_DIR/prompts/plan.md" "plan template installed"
   assert_file "$AGENT_DIR/skills/brave-search/brave.mjs" "brave-search script installed"
+  assert_file "$AGENT_DIR/skills/herdr-subagents/SKILL.md" "herdr-subagents skill installed"
 
+  assert_contains "$AGENT_DIR/skills/herdr-subagents/SKILL.md" "--no-session" \
+    "ephemeral mode is documented"
+  assert_contains "$AGENT_DIR/skills/herdr-subagents/SKILL.md" "Leave the pane open" \
+    "persistent mode preserves the child pane"
   assert_contains "$AGENT_DIR/settings.json" "\"theme\"" "settings.json merged by default"
 }
 
 show_agent_dir() {
-  section "3. resulting agent directory"
+  section "4. resulting agent directory"
   printf '\n--- default install: %s\n' "$AGENT_DIR"
   find "$AGENT_DIR" -maxdepth 2 -not -path "*/npm/*" | sort
-  printf '\n--- herdr skill frontmatter (must be user-invoked)\n'
-  head -6 "$AGENT_DIR/skills/herdr/SKILL.md" 2>/dev/null || note "(herdr skill not installed)"
+  printf '\n--- herdr-subagents frontmatter (must be user-invoked)\n'
+  head -6 "$AGENT_DIR/skills/herdr-subagents/SKILL.md"
   printf '\n--- pi list\n'
   (cd "$SCRATCH" && PI_OFFLINE=1 pi list 2>&1 | tail -4)
 }
@@ -210,7 +293,7 @@ cleanup_brave_key() {
 
 # Exercises key lookup, storage and the auth-error path without a real key.
 test_brave_script() {
-  section "4. brave-search script"
+  section "5. brave-search script"
   local script="$AGENT_DIR/skills/brave-search/brave.mjs"
   local output
 
@@ -283,10 +366,14 @@ report_dump() { # <out dir> <label> <agents variant marker>
   assert_contains "$out/system-prompt.session-start.txt" "TODO.md" "$label: TODO convention reached the prompt"
   assert_registered "$out" "plan" "$label: /plan template registered"
   assert_registered "$out" "skill:brave-search" "$label: brave-search skill registered"
+  assert_registered "$out" "skill:herdr-subagents" "$label: herdr-subagents skill registered"
+  assert_not_contains "$out/system-prompt.session-start.txt" \
+    "Run disposable or persistent Pi agents through Herdr." \
+    "$label: herdr-subagents has zero steady-state prompt cost"
 }
 
 test_default_configuration() {
-  section "5. what pi assembles"
+  section "6. what pi assembles"
   if dump_prompt "$AGENT_DIR" "$SCRATCH/out-default"; then
     report_dump "$SCRATCH/out-default" "default install" "working agreement"
   else
@@ -296,7 +383,7 @@ test_default_configuration() {
 }
 
 test_lean_variant() {
-  section "6. the lean AGENTS.md variant"
+  section "7. the lean AGENTS.md variant"
   cp "$REPO_DIR/config/AGENTS.lean.md" "$AGENT_DIR/AGENTS.md"
   if dump_prompt "$AGENT_DIR" "$SCRATCH/out-lean"; then
     report_dump "$SCRATCH/out-lean" "lean AGENTS.md" "Real code that ships"
@@ -315,6 +402,7 @@ main() {
 
   check_environment
   test_dry_run
+  test_skill_only_install
   test_install
   show_agent_dir
   test_brave_script
