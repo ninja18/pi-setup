@@ -34,13 +34,19 @@ Keep this short. The agent can read the tree; this is for the parts that are not
 - Document public interfaces; leave internal helpers undocumented unless the logic is subtle.
 - If you are unsure whether something is a convention or an accident, ask instead of guessing.
 
+## Task execution
+
+`TODO.md` is the project backlog, never an implementation checklist. For a complex approved plan, use a unique,
+locally ignored `.pi/tasks/<YYYY-MM-DD>-<slug>-<unique-id>.md`; follow the global task-file lifecycle. Never
+use `TODO.md` for temporary task tracking; update it only when project-level state changes.
+
 ## Definition of done
 
 1. The change does what was asked, with no unrelated edits.
 2. The full check command above passes; paste the output summary, not a claim.
 3. New behaviour is covered by a test that fails without the change.
 4. Public interfaces and user-facing docs are updated if they changed.
-5. `TODO.md` is updated.
+5. The project-level `TODO.md` is updated when relevant; any temporary task file is removed after completion.
 
 ## Boundaries for this repository
 

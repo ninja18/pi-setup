@@ -6,7 +6,7 @@ state I can review, not for speed or for volume of output.
 ## Before you act
 
 - Read the files involved before editing them. Never guess at a symbol, path, or API shape.
-- If the repo has a `TODO.md`, read it first and keep it current (see Task tracking below).
+- If the repo has a `TODO.md`, read it first; change it only for project-level state (see Project tracking below).
 - State the approach and wait for confirmation when a change spans more than two files, changes a
   public interface, or anything irreversible is involved.
 
@@ -17,22 +17,23 @@ state I can review, not for speed or for volume of output.
   and stop rather than describing an intended fix.
 - Never claim a command passed unless you ran it in this session and saw the output.
 
-## Task tracking (TODO.md)
+## Project tracking (`TODO.md`)
 
-Keep the working plan in `TODO.md` at the repository root, in exactly this shape:
+`TODO.md` is the durable project backlog, not an implementation checklist. Read it before work; update it only
+when project-level state changes, never for implementation steps. Use `- [ ]` pending, `- [~]` in progress,
+`- [x]` done, and `- [ ] (blocked: reason)`; keep one project item in progress, preserve unfinished items,
+and move completed ones under `## Done`.
 
-```
-- [ ] pending task
-- [~] task in progress
-- [x] done task
-- [ ] (blocked: reason) task that cannot proceed
-```
+## Task execution (`.pi/tasks/`)
 
-- Read `TODO.md` before starting work; write or update it before beginning a multi-step task.
-- Keep at most one item in progress at a time.
-- Add items instead of rewriting history; never delete an item you did not complete - mark it blocked.
-- When a task finishes, tick it and move completed items under `## Done` with the date.
-- Keep it short: one line per item, no sub-bullets.
+After an approved `/plan`, create `.pi/tasks/<YYYY-MM-DD>-<slug>-<unique-id>.md` only for complex work:
+3+ checkable steps, several components, or likely resumption. Use a session ID or UUID for `<unique-id>`;
+never overwrite an existing file. Include the task goal and approved plan title so it can be identified later.
+In Git, locally ignore `.pi/tasks/` in `.git/info/exclude`, never tracked `.gitignore`. Turn the plan into
+3-7 outcome-level items with checks; keep one `[~]`, mark `[x]` only after its check, and note blockers.
+On resumption, list `.pi/tasks/`, read the file matching this task's goal/plan, and ask if multiple match.
+Update only at step boundaries. Delete only that task's file after final validation when all items are done.
+Never use `TODO.md` for implementation steps; update it separately if project-level state changes.
 
 ## Planning
 

@@ -24,9 +24,10 @@ So the design goal was: **get the behavioural rails, without paying for tool sch
 
 1. **Maintain Pi philosophy**. Add features to the developer's behaviour instead of context bloat.
 2. **Easier to maintain**. Pi is customisable, but this setup aims to make it rare that you comeback and tweak settings often.
-3. **Files before extensions.** A rule in `AGENTS.md`, a convention in `TODO.md`, a template in
-   `prompts/` costs a fixed, small number of tokens — or zero until invoked — and works in every
-   harness that reads markdown. An extension costs a tool schema on every request forever.
+3. **Files before extensions.** A rule in `AGENTS.md`, conventions in `TODO.md` and ephemeral
+   `.pi/tasks/*.md` files, or a template in `prompts/` cost a fixed, small number of tokens — or zero
+   until invoked — and work in every harness that reads markdown. An extension costs a tool schema on every
+   request forever.
 4. **Progressive disclosure where possible.** Skills put only their name and description in the
    prompt; the body loads when the skill is used. `disable-model-invocation: true` removes even the
    description, leaving the skill callable by you via `/skill:<name>`.
@@ -44,7 +45,7 @@ So the design goal was: **get the behavioural rails, without paying for tool sch
 | Need                         | Options measured                                                                                                                                                                                     | Decision                                         | Why                                                                                                                                                                                                                                                                                                                                            |
 | ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Plan before editing          | Plannotator plan mode **+481** (browser approval gate, 2 tools) · `@narumitw/pi-plan-mode` **+478** · prompt template **+0** · mattpocock `grill-me`/`wayfinder`/`to-spec`/`implement` skills **+0** | `/plan` prompt template (+0), skills when wanted | A template costs nothing and produces the same artefact — a written plan you approve. Skills are already `disable-model-invocation: true`, so adopting them later is free too.                                                                                                                                                                 |
-| Track multi-step work        | `@juicesharp/rpiv-todo` **+904** (tool schema 474 + 430 guidance) · `TODO.md` convention in `AGENTS.md` **+202**                                                                                     | `TODO.md` file                                   | 4.5× cheaper, survives new sessions and compaction, visible in git, works in any other agent you use.                                                                                                                                                                                                                                          |
+| Track work | `@juicesharp/rpiv-todo` **+904** (tool schema 474 + 430 guidance) · `TODO.md` and ephemeral `.pi/tasks/` conventions in `AGENTS.md` | project backlog plus scoped task files | The project backlog survives across agents; a task file preserves an approved complex-feature plan across sessions, then is deleted. Both avoid a resident tool schema. |
 | Delegate to subagents        | `pi-subagents` **+5918** · `pi-herdr-subagents` **+2118** · `pi-herdsman` **+2343 / +74.9% prefill** on compatible Pi 0.87.1 · custom Herdr skill **+0** | custom `herdr-subagents` skill, invoked on demand | Basic orchestration needs two paths only: disposable children that leave no Pi session and persistent branches whose panes stay open. The user-invoked skill supplies both for zero steady-state context; the broader Herdsman tool surface is not resident on every request. |
 | Web search + fetch           | `pi-web-access` **+2899** · `pi-mcp-adapter` + a Brave MCP server **+1077** · Brave skill + script **~+110**                                                                                         | skill + dependency-free script                   | You already pay for a search API. 26× cheaper than `pi-web-access`, no MCP server to keep running.                                                                                                                                                                                                                                             |
 | Constrain writes and network | `pi-sandbox` **+0** · `@gotgenes/pi-permission-system` **+0** · container/VM (separate concern)                                                                                                      | **nothing** — measured, then rejected               | Both cost zero prompt tokens because they wrap `bash` and gate the file tools instead of registering new tools. `pi-sandbox` was installed and used for real work before being removed: the failures it produces cannot be configured away, and making toolchains build inside it needed per-toolchain workarounds. See [No sandbox layer](#no-sandbox-layer-why-pi-sandbox-is-not-included).                                                                             |
@@ -80,12 +81,12 @@ Rules that materially change the answer:
 - **Permission and sandbox extensions cost 0** prompt tokens: they wrap `bash` and gate the file
   tools instead of registering new tools.
 
-### Results (pi 0.85.1)
+### Historical extension comparison (Pi 0.85.1)
 
 Prefill = system prompt + active tool schemas. Absolute figures differ across platforms and pi
 releases by a few tokens, because the working-directory path is part of the system prompt, so the
-_ratios_ are what matter. The extension and package rows were measured on Linux aarch64; the two
-`this setup` rows were re-measured on macOS on 2026-09-21 with `./test-bundle.sh`.
+_ratios_ are what matter. Extension and package rows were measured on Linux aarch64; the scoped task-file
+configuration is measured separately below.
 
 | Configuration                                               | Prompt tok | Δ     | Tools  | Tool tok | Prefill   | vs bare    |
 | ----------------------------------------------------------- | ---------- | ----- | ------ | -------- | --------- | ---------- |
@@ -93,7 +94,7 @@ _ratios_ are what matter. The extension and package rows were measured on Linux 
 | `@gotgenes/pi-permission-system`                            | 678        | 0     | 4      | 638      | **1316**  | **+0**     |
 | silent skills (`disable-model-invocation`)                  | 678        | 0     | 4      | 638      | **1316**  | **+0**     |
 | `/plan` prompt template                                     | 678        | 0     | 4      | 638      | **1316**  | **+0**     |
-| `TODO.md` + AGENTS.md convention                            | 880        | +202  | 4      | 638      | **1518**  | +202       |
+| `TODO.md` AGENTS.md convention (historical)              | 880        | +202  | 4      | 638      | **1518**  | +202       |
 | project `AGENTS.md`                                         | 945        | +267  | 4      | 638      | **1583**  | +267       |
 | 6 mattpocock skills (2 model-invoked)                       | 1006       | +328  | 4      | 638      | **1644**  | +328       |
 | `@narumitw/pi-plan-mode`                                    | 678        | 0     | 6      | 1116     | **1794**  | +478       |
@@ -124,12 +125,21 @@ after the herdr pane guidance was added to the global `AGENTS.md`, and with the 
 re-running `./test-bundle.sh` gives your own figures. The other rows in this table were measured
 without the project template, so their deltas are unaffected.
 
+### Current bundle result (Pi 0.86.1)
+
+On macOS, `./test-bundle.sh` measured the scoped task-file configuration at **3338** prefill tokens with
+the default `AGENTS.md`, or **2902** with `AGENTS.lean.md`. A separately measured bare Pi baseline was
+**1302**, making the respective overheads **+2036** and **+1600**. The `.pi/tasks/*.md` files are not loaded
+until an agent reads one; the additional steady-state cost is the concise lifecycle instruction only.
+
+Re-run `./test-bundle.sh` for your own platform; its scratch-directory path contributes a few tokens.
+
 Reading the table:
 
 - pi's floor is real, and it is easy to lose. A handful of packages took a comparable setup from
   ~1.3k to ~16.7k — 12×. The free ones were the ones that shipped files, templates or wrappers rather
   than tool schemas.
-- The cheap wins are files: `+202` for a `TODO.md` convention against `+904` for a todo tool.
+- The cheap wins are files: the `TODO.md` and `.pi/tasks/` conventions add instruction text, rather than a resident todo-tool schema (+904 in the measured extension).
 - The expensive things are tool _schemas_, not features. `pi-subagents` and `pi-lens` are 11k tokens
   of schema between them.
 - Cost is not quality, and free is not free. The cheapest layers are the ones that wrap `bash` or
@@ -183,11 +193,13 @@ the write tools. Start with the template; add Plannotator when you catch yoursel
 
 ### A todo extension (`@juicesharp/rpiv-todo`)
 
-**+904 tokens.** Its advantages over a file are real: a live overlay, a dependency graph with cycle
-detection, structured CRUD that survives `/reload` and compaction via branch replay. But a `TODO.md`
-file costs `+202`, persists across sessions _and across agents_ (Claude Code, Codex, or a human
-reading the repo all see the same file), and shows up in `git diff`. If you work in long single
-sessions where compaction is a real risk, the extension earns its tokens; otherwise the file wins.
+**+904 tokens.** Its advantages over files are real: a live overlay, a dependency graph with cycle
+detection, structured CRUD that survives `/reload` and compaction via branch replay. This setup instead
+keeps the durable project backlog in `TODO.md`, and turns an approved complex-feature plan into a scoped,
+locally ignored `.pi/tasks/<slug>.md` file. The task file survives new sessions and compaction, retains one
+active checked item and its validation evidence, and is deleted after final validation; it never pollutes the
+backlog. It has no tool schema or overlay. If you need the live UI, dependency graph, or long single-session
+state replay routinely, the extension earns its tokens; otherwise the files win.
 
 ### `pi-lens` — the biggest single "no"
 

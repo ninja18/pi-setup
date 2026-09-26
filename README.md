@@ -4,20 +4,18 @@ A minimal, **measured** configuration for [pi](https://pi.dev) on macOS: no plan
 The main principle behind this setup is keep pi away from bloating and still add features that we use in other harnesses.
 This discipline comes from markdown files that cost nothing until they are used instead of extensions which consume context and self created extensions which need maintenance.
 
-Total cost: **+1847 tokens per request** over a bare pi (+1420 with the lean `AGENTS.md`). For
-comparison, the popular `pi-lens` extension alone costs +5402 and `pi-subagents` costs +5918 — see the
-[full measurements](DESIGN.md#results-pi-0851).
-
-Everything here was verified on pi 0.85.1 by dumping what pi actually assembles into the prompt
-(no API key needed). The reasoning behind each choice, the numbers, and why several well-known
-extensions were deliberately left out are in **[DESIGN.md](DESIGN.md)**.
+Measured prefill: **3451 tokens** with the default `AGENTS.md` (+2147 over bare Pi), or **2987** with the lean
+variant (+1683). Task-file instructions are resident; a task file itself is read only when needed. These Pi
+0.86.1 figures come from an offline, isolated scratch run (no API key needed); see [context cost](#measured-context-cost).
+Extension comparisons in [DESIGN.md](DESIGN.md) are historical measurements on other Pi versions.
 
 ## What you get
 
 | Decision                 | Implementation                                                           | Prompt cost                 |
 | ------------------------ | ------------------------------------------------------------------------ | --------------------------- |
 | Plan before editing      | `prompts/plan.md` → `/plan` (a template, not a mode)                     | **0**                       |
-| Track multi-step work    | a `TODO.md` convention in `AGENTS.md`                                    | part of the ~910-token file |
+| Project tracking         | `TODO.md` backlog convention in `AGENTS.md`                              | part of the global file     |
+| Execute complex features | approved plan → scoped `.pi/tasks/<date>-<slug>-<id>.md` checklist        | part of the global file     |
 | Web search + fetch       | `skills/brave-search/` — dependency-free script, Keychain-backed API key | ~110 (skill description)    |
 | Delegate to subagents    | `skills/herdr-subagents/` — disposable or persistent Pi children         | **0** (user-invoked)        |
 | A stable default posture | `settings.json`, `env.example.sh`                                        | 0                           |
@@ -86,6 +84,17 @@ Fill in the Commands section first — that is the one part the agent cannot inf
 `AGENTS.md` layers on top of the global one; specific rules win in practice. Approve the project-trust
 prompt once per repo (or run `/trust`).
 
+### Complex feature task files
+
+`TODO.md` remains the durable project backlog; it changes only when project-level state changes, never to
+track implementation steps. After you approve a complex `/plan`, the agent creates its own
+`.pi/tasks/<YYYY-MM-DD>-<slug>-<unique-id>.md` (session ID or UUID), without overwriting an existing file.
+It records the goal and approved plan title alongside 3-7 checked outcomes. The directory is locally ignored
+through `.git/info/exclude`, not tracked `.gitignore`; ignored files still require care when staging with
+`git add -f`. On resumption, the agent lists `.pi/tasks/`, selects the file matching this goal/plan, and asks
+if ambiguous. It keeps one item in progress, records validation at step boundaries, and deletes only that
+file after final validation passes. Simple tasks create no task file.
+
 ## Verify it works
 
 ```bash
@@ -115,7 +124,7 @@ config/AGENTS.lean.md      same rules, less prose  - swap in if you want the tok
 prompts/plan.md            ~/.pi/agent/prompts/plan.md - /plan template
 skills/brave-search/       ~/.pi/agent/skills/brave-search/ - SKILL.md + brave.mjs
 skills/herdr-subagents/     ~/.pi/agent/skills/herdr-subagents/ - two-mode Herdr orchestration
-templates/project/         copy into each repo: AGENTS.md + TODO.md
+templates/project/         copy into each repo: AGENTS.md + TODO.md; defines ephemeral .pi/tasks/ files
 tools/                     context audit harness: measure what a package costs before adopting it
 lib/                       helper scripts used by install.sh
 env.example.sh             optional shell exports, all commented out
@@ -139,30 +148,20 @@ three worth knowing.
 
 ## Measured context cost
 
-`tokens = ceil(chars/4)`, pi's own estimator; "prefill" is the system prompt plus **active** tool
-schemas, re-sent on every request. Full table in [DESIGN.md](DESIGN.md#results-pi-0851).
+`tokens = ceil(chars/4)`, pi's estimator; "prefill" is the system prompt plus **active** tool schemas.
+Measured on Pi 0.86.1 with `tools/ctx-audit.ts` in an offline, isolated scratch directory (`--no-session`):
 
-| Configuration                                      | Prefill  | vs bare pi |
-| -------------------------------------------------- | -------- | ---------- |
-| bare pi (4 tools)                                  | 1316     | —          |
-| **this setup**, default                            | **3163** | +1847      |
-| **this setup**, `AGENTS.lean.md`                   | **2736** | +1420      |
-| **if you add an extension instead**                |          |            |
-| `@plannotator/pi-extension` (plan mode, hard gate) | —        | +481       |
-| `@juicesharp/rpiv-todo`                            | —        | +904       |
-| `pi-lens` (6-tool allowlist)                       | —        | +1420      |
-| `pi-web-access`                                    | —        | +2899      |
-| `pi-lens` at full width (17 tools)                 | —        | +5402      |
-| `pi-subagents`                                     | —        | +5918      |
-| `pi-herdsman`                                      | 5472     | +2343      |
-| "install everything" (all of the above)            | 16735    | +15419     |
+| Configuration                    | Prefill  | vs bare Pi |
+| -------------------------------- | -------- | ---------- |
+| bare Pi (4 tools)                | 1304     | —          |
+| **this setup**, default          | **3451** | +2147      |
+| **this setup**, `AGENTS.lean.md` | **2987** | +1683      |
 
-The extension rows are deltas over bare pi, measured in [DESIGN.md](DESIGN.md#results-pi-0851);
-add one to whichever baseline above you are actually running.
-
-The two line items worth understanding: the global `AGENTS.md` is ~910 tokens of the ~1847, and the
-project `AGENTS.md` template is now the second largest at ~512 (it was ~267 before it was made
-language-agnostic). `AGENTS.lean.md` exists as a drop-in if you want most of the first one back.
+Figures vary slightly with scratch-directory paths. The older **3338 / 2902** bundle figures in
+[DESIGN.md](DESIGN.md#current-bundle-result-pi-0861) predate these wording changes. Extension comparisons
+in [DESIGN.md](DESIGN.md#historical-extension-comparison-pi-0851) use a separate Pi 0.85.1 baseline
+(1316); `pi-herdsman` was measured separately on Pi 0.87.1. Do not add those deltas to the current totals.
+A task file's contents are not part of steady-state prefill. `AGENTS.lean.md` remains the lower-cost drop-in.
 
 ## Other good practices
 
@@ -183,8 +182,8 @@ workflow. Concretely:
    `git worktree add ../proj-agent -b agent/task`.
 6. **`/tree`, `/fork` and `/clone` rewind the conversation, not the files.** Useful when the context
    went bad; never a substitute for git.
-7. **Ignore agent scratch** (`.pi/`, generated artefacts) so it never lands in a commit, and stage
-   selectively with `git add -p`.
+7. **Ignore ephemeral agent scratch** such as `.pi/tasks/` through `.git/info/exclude` so it never lands
+   in a commit, and stage selectively with `git add -p`.
 
 ## Rollback
 

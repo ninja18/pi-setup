@@ -1,13 +1,14 @@
 # TODO
 
-Working plan for this repository. Format: `- [ ]` pending, `- [~]` in progress, `- [x]` done,
-`- [ ] (blocked: reason)` cannot proceed. One line per item, at most one in progress.
+Durable project backlog, not an implementation checklist. Format: `- [ ]` pending, `- [~]` in progress,
+`- [x]` done, `- [ ] (blocked: reason)` cannot proceed. One line per item, at most one in progress.
+Track approved complex-feature steps in locally ignored `.pi/tasks/` files instead.
 
-- [~] Example: scaffold the project and get `npm run check` green
-- [ ] Example: add the first real test for the core module
+- [~] Example: deliver the first project release
+- [ ] Example: document supported platforms
 
 ## Done
 
-<!-- Move completed items here with the date, e.g.
-- 2026-09-19 initialised repo, CI, lint/format config
+<!-- Move completed project items here with the date, e.g.
+- [x] (2026-09-19) Initialised the project
 -->

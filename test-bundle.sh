@@ -293,7 +293,8 @@ report_dump() { # <out dir> <label> <agents variant marker>
 
   assert_file "$out/system-prompt.session-start.txt" "$label: prompt dump written"
   assert_contains "$out/system-prompt.session-start.txt" "$marker" "$label: AGENTS.md content reached the prompt"
-  assert_contains "$out/system-prompt.session-start.txt" "TODO.md" "$label: TODO convention reached the prompt"
+  assert_contains "$out/system-prompt.session-start.txt" "TODO.md" "$label: project backlog convention reached the prompt"
+  assert_contains "$out/system-prompt.session-start.txt" ".pi/tasks/" "$label: scoped task convention reached the prompt"
   assert_registered "$out" "plan" "$label: /plan template registered"
   assert_registered "$out" "skill:brave-search" "$label: brave-search skill registered"
   assert_registered "$out" "skill:herdr-subagents" "$label: herdr-subagents skill registered"
