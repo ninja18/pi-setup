@@ -18,19 +18,19 @@ Pi 0.86.1 in an isolated scratch directory; tokens use Pi's `ceil(chars / 4)` es
 
 The last row is the ["install everything" stack](DESIGN.md#prefill-comparison): 26 active tools,
 measured on Linux with Pi 0.85.1 against a **1316**-token bare baseline. It is not this setup plus
-one extension, and its delta is not comparable to the current rows. Paths can shift totals slightly;
-task files load only when read, while global task-file instructions are included above.
+one extension, and its delta is not comparable to the current rows. This was measured in a old pi and extensions version, your measurements may differ.
+Paths can shift totals slightly; task files load only when read, while global instructions are included above.
 
 ## What you get
 
-| Decision                 | Implementation                                                           | Prompt cost                 |
-| ------------------------ | ------------------------------------------------------------------------ | --------------------------- |
-| Plan before editing      | `prompts/plan.md` → `/plan` (a template, not a mode)                     | **0**                       |
-| Project tracking         | `TODO.md` backlog convention in `AGENTS.md`                              | part of the global file     |
-| Execute complex features | approved plan → scoped `.pi/tasks/<date>-<slug>-<id>.md` checklist        | part of the global file     |
-| Web search + fetch       | `skills/brave-search/` — dependency-free script, Keychain-backed API key | ~110 (skill description)    |
-| Delegate to subagents    | `skills/herdr-subagents/` — disposable or persistent Pi children         | **0** (user-invoked)        |
-| A stable default posture | `settings.json`, `env.example.sh`                                        | 0                           |
+| Decision                 | Implementation                                                           | Prompt cost              |
+| ------------------------ | ------------------------------------------------------------------------ | ------------------------ |
+| Plan before editing      | `prompts/plan.md` → `/plan` (a template, not a mode)                     | **0**                    |
+| Project tracking         | `TODO.md` backlog convention in `AGENTS.md`                              | part of the global file  |
+| Execute complex features | approved plan → scoped `.pi/tasks/<date>-<slug>-<id>.md` checklist       | part of the global file  |
+| Web search + fetch       | `skills/brave-search/` — dependency-free script, Keychain-backed API key | ~110 (skill description) |
+| Delegate to subagents    | `skills/herdr-subagents/` — disposable or persistent Pi children         | **0** (user-invoked)     |
+| A stable default posture | `settings.json`, `env.example.sh`                                        | 0                        |
 
 `/skill:herdr-subagents` defaults to an ephemeral child (`pi --no-session`, capture the answer,
 close its pane). Its persistent mode creates a named Pi session and deliberately leaves the pane open
@@ -46,7 +46,7 @@ and [failure modes](SANDBOX-FAILURE-MODES.md) for evidence; use a container/VM w
 | Need             | Why                                   | Check               |
 | ---------------- | ------------------------------------- | ------------------- |
 | macOS with zsh   | what this is written for              | `echo $SHELL`       |
-| Node ≥ 22.19     | pi 0.85.1 requires it                 | `node --version`    |
+| Node ≥ 22.19     | required by the tested Pi 0.86.1      | `node --version`    |
 | pi on `PATH`     | the thing being configured            | `pi --version`      |
 | python3          | used by the installer and the tooling | `python3 --version` |
 | herdr (optional) | only for the multi-pane workflow      | `herdr --version`   |
@@ -84,14 +84,17 @@ Then, once:
 
 ## Per project
 
+For a **new** project, copy the templates without overwriting existing files:
+
 ```bash
-cp ~/pi-setup/templates/project/AGENTS.md  /path/to/project/AGENTS.md
-cp ~/pi-setup/templates/project/TODO.md    /path/to/project/TODO.md
+cp -n ~/pi-setup/templates/project/AGENTS.md  /path/to/project/AGENTS.md
+cp -n ~/pi-setup/templates/project/TODO.md    /path/to/project/TODO.md
 ```
 
-Fill in the Commands section first — that is the one part the agent cannot infer. The project
-`AGENTS.md` layers on top of the global one; specific rules win in practice. Approve the project-trust
-prompt once per repo (or run `/trust`).
+If either file already exists, **merge it instead of replacing it**: keep project-specific commands
+and backlog items, and add the task-execution convention from the templates. Fill in the Commands
+section for new projects — the agent cannot infer it. Project `AGENTS.md` layers on top of the
+global one. Approve the project-trust prompt once per repo (or run `/trust`).
 
 ### Complex feature task files
 
@@ -109,13 +112,12 @@ pi                                    # inside a project
 /todos                                # NOT available - there is no todo extension, by design
 ```
 
-`./test-bundle.sh` installs the configuration into a scratch agent directory, runs pi against it, and
-**asserts** what loaded: the base files, that `/plan`, `brave-search`, and `herdr-subagents`
-registered, that both skills have the intended invocation mode, that each `AGENTS.md` variant reached
-the prompt, that **no** sandbox layer is present, and that the Brave script fails cleanly on a bad
-token. It prints the measured token cost for both `AGENTS.md` shapes, exits non-zero if any check
-fails, and takes `--keep` to preserve the scratch directory for inspection. It needs `pi`, `node` and
-`python3` on `PATH`, and no API key — the prompt is dumped before the auth check.
+`./test-bundle.sh` installs into a scratch agent directory and verifies what Pi loads, skill
+invocation modes, both `AGENTS.md` variants, and the absence of a sandbox. It prints context costs;
+`--keep` preserves the scratch files. No provider API key is needed for the prompt dump. **The Brave
+check is not offline:** it checks for an existing key and, if none is found, temporarily stores a
+dummy key in the Keychain or config file and requests `api.search.brave.com` to verify the auth-error
+path, then removes the dummy key. Review the script before running it on a machine with credentials.
 
 ## Files
 
@@ -160,9 +162,11 @@ workflow. Concretely:
    `git commit --allow-empty -m "checkpoint: before agent run"`.
 2. **Read the diff, not the summary.** `git diff --stat` first, then `git diff`. Reviewing the actual
    patch is the only reliable check.
-3. **Roll back in the right order.** `git restore .` (discard unstaged edits) →
-   `git reset --hard <checkpoint>` (discard commits) → `git clean -fd` (remove files it created;
-   `-n` first for a dry run).
+3. **Undo selectively.** Check `git status --short`, `git diff` and `git diff --cached` first;
+   save work you want to keep. `git restore -- path/to/file` discards unstaged edits **to that file**;
+   `git revert <commit>` can undo a reviewed commit. Preview untracked removals with `git clean -nd`,
+   then remove only files you identified. Do not use blanket `git reset --hard` or `git clean -fd`
+   as routine rollback.
 4. **Commit small.** Rollback granularity is only as fine as your commits.
 5. **Isolate bigger jobs** in a throwaway branch or worktree:
    `git worktree add ../proj-agent -b agent/task`.
@@ -171,14 +175,14 @@ workflow. Concretely:
 7. **Ignore ephemeral agent scratch** such as `.pi/tasks/` through `.git/info/exclude` so it never lands
    in a commit, and stage selectively with `git add -p`.
 
-## Rollback
+## Undoing an installation
 
-```bash
-rm ~/.pi/agent/AGENTS.md
-rm ~/.pi/agent/prompts/plan.md
-rm -rf ~/.pi/agent/skills/brave-search ~/.pi/agent/skills/herdr-subagents
-ls ~/.pi/agent/*.bak.* ~/.pi/agent/settings.json.orig   # closest backups of what was replaced
-```
+There is no automatic uninstall. `install.sh` backs up replaced files as `.bak.<timestamp>`;
+`settings.json.orig` may hold an earlier settings snapshot, and a changed settings file gets its own
+backup. Inspect each installed file and its backup before restoring a _specific_ file (for example,
+`diff -u` to compare, then `cp -i` to restore). Remove a file only if you have confirmed this install
+created it; otherwise you may delete an existing Pi setup. Settings are **merged**, so review and
+revert only this setup's keys if you have made changes since installation.
 
 ## Improvements needed
 

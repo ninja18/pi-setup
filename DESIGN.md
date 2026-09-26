@@ -2,7 +2,7 @@
 
 Why this configuration looks the way it does, what each decision cost, and what was deliberately
 left out. Every number here was measured with the tooling in `tools/` — see
-[Reproducing the numbers](#reproducing-the-numbers).
+[Measuring your own setup](#measuring-your-own-setup).
 
 ## The problem
 
@@ -22,34 +22,34 @@ So the design goal was: **get the behavioural rails, without paying for tool sch
 
 ## Principles
 
-1. **Maintain Pi philosophy**. Add features to the developer's behaviour instead of context bloat.
-2. **Easier to maintain**. Pi is customisable, but this setup aims to make it rare that you comeback and tweak settings often.
-3. **Files before extensions.** A rule in `AGENTS.md`, conventions in `TODO.md` and ephemeral
-   `.pi/tasks/*.md` files, or a template in `prompts/` cost a fixed, small number of tokens — or zero
-   until invoked — and work in every harness that reads markdown. An extension costs a tool schema on every
-   request forever.
-4. **Progressive disclosure where possible.** Skills put only their name and description in the
-   prompt; the body loads when the skill is used. `disable-model-invocation: true` removes even the
-   description, leaving the skill callable by you via `/skill:<name>`.
-5. **Zero-cost invocation paths win ties.** Prompt templates and user-invoked skills measure at
-   exactly `+0`. Plan mode, by contrast, is a state machine that must be resident.
-6. **Advice where you can, enforcement where advice fails.** Instructions in `AGENTS.md` handle
-   ~90% of desired behaviour for a few hundred tokens. The remaining 10% — filesystem writes,
-   network reach — has to be enforced outside the model, and no layer we have measured earns its keep
-   yet: see [No sandbox layer](#no-sandbox-layer-why-pi-sandbox-is-not-included).
-7. **Measure on your own machine.** Adoption numbers tell you a package is maintained; they tell you
-   nothing about what it costs you. The harness in `tools/` answers that in a couple of minutes.
+1. **Keep Pi small and maintainable.** Add conventions before new resident tools or another
+   extension to maintain.
+2. **Prefer files when they suffice.** `AGENTS.md` costs instruction tokens; `TODO.md` and
+   `.pi/tasks/` are read when needed. Prompt templates and user-invoked skills avoid tool-schema
+   cost until used.
+3. **Load capabilities on demand.** Skill descriptions can appear in the prompt, while skill
+   bodies load only when used; `disable-model-invocation: true` removes even that description.
+4. **Separate advice from enforcement.** `AGENTS.md` guides the model but cannot constrain
+   filesystem or network access. This setup does not claim to provide an OS boundary; see
+   [No sandbox layer](#no-sandbox-layer-why-pi-sandbox-is-not-included).
+5. **Measure on your own machine.** Compare active prompt and tool costs, not just the features
+   a package offers; use the harness in `tools/`.
 
 ## How each choice was made
 
-| Need                         | Options measured                                                                                                                                                                                     | Decision                                         | Why                                                                                                                                                                                                                                                                                                                                            |
-| ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Plan before editing          | Plannotator plan mode **+481** (browser approval gate, 2 tools) · `@narumitw/pi-plan-mode` **+478** · prompt template **+0** · mattpocock `grill-me`/`wayfinder`/`to-spec`/`implement` skills **+0** | `/plan` prompt template (+0), skills when wanted | A template costs nothing and produces the same artefact — a written plan you approve. Skills are already `disable-model-invocation: true`, so adopting them later is free too.                                                                                                                                                                 |
-| Track work | `@juicesharp/rpiv-todo` **+904** (tool schema 474 + 430 guidance) · `TODO.md` and ephemeral `.pi/tasks/` conventions in `AGENTS.md` | project backlog plus scoped task files | The project backlog survives across agents; a task file preserves an approved complex-feature plan across sessions, then is deleted. Both avoid a resident tool schema. |
-| Delegate to subagents        | `pi-subagents` **+5918** · `pi-herdr-subagents` **+2118** · `pi-herdsman` **+2343 / +74.9% prefill** on compatible Pi 0.87.1 · custom Herdr skill **+0** | custom `herdr-subagents` skill, invoked on demand | Basic orchestration needs two paths only: disposable children that leave no Pi session and persistent branches whose panes stay open. The user-invoked skill supplies both for zero steady-state context; the broader Herdsman tool surface is not resident on every request. |
-| Web search + fetch           | `pi-web-access` **+2899** · `pi-mcp-adapter` + a Brave MCP server **+1077** · Brave skill + script **~+110**                                                                                         | skill + dependency-free script                   | You already pay for a search API. 26× cheaper than `pi-web-access`, no MCP server to keep running.                                                                                                                                                                                                                                             |
-| Constrain writes and network | `pi-sandbox` **+0** · `@gotgenes/pi-permission-system` **+0** · container/VM (separate concern)                                                                                                      | **nothing** — measured, then rejected               | Both cost zero prompt tokens because they wrap `bash` and gate the file tools instead of registering new tools. `pi-sandbox` was installed and used for real work before being removed: the failures it produces cannot be configured away, and making toolchains build inside it needed per-toolchain workarounds. See [No sandbox layer](#no-sandbox-layer-why-pi-sandbox-is-not-included).                                                                             |
-| Instructions to the model    | One big `AGENTS.md` vs a leaner one                                                                                                                                                                  | Both shipped                                     | The current global files estimate at 1081 / 618 tokens (default / lean). They are the largest fixed instruction cost, so the choice belongs to you.                                                                                                                                                                        |
+| Need | Choice here | Extensions considered | Reason |
+| ---- | ----------- | --------------------- | ------ |
+| Plan before editing | `/plan` template | `@plannotator/pi-extension`, `@narumitw/pi-plan-mode` | A plan without always-active mode tools; no enforced write gate. |
+| Track work | `TODO.md` backlog + ignored `.pi/tasks/` | `@juicesharp/rpiv-todo` | Project state and approved plans survive sessions without a todo extension. |
+| Delegate | User-invoked Herdr skill | `pi-subagents`, `pi-herdr-subagents`, `pi-herdsman` | Disposable or persistent children without resident orchestration tools. |
+| Search + fetch | Brave skill + script | `pi-web-access`, `pi-mcp-adapter` | One search API without an MCP server or resident search tools. |
+| Control writes/network | No sandbox shipped | `pi-sandbox`, `@gotgenes/pi-permission-system` | The evaluated guardrail impaired ordinary work and did not enforce its domain list. |
+| Instructions | Default and lean `AGENTS.md` | — | Choose detail or a lower fixed instruction cost. |
+
+*These are evaluated alternatives, not part of the default setup. See
+[Why certain things were not added](#why-certain-things-were-not-added) for the main extension trade-offs;
+[Herdsman](#pi-herdsman-evaluation-pi-0871) and the [sandbox decision](#no-sandbox-layer-why-pi-sandbox-is-not-included)
+are covered separately.* See [prefill measurements](#prefill-comparison) for the costs.
 
 ## Measurements
 
@@ -61,7 +61,7 @@ not an exact provider token count. Each delta is compared with a bare Pi run in 
 paths and Pi versions can change absolute totals. Skills contribute descriptions until invoked;
 registered commands and templates add nothing until used. Wrappers such as permission and sandbox
 extensions add no tool schema. See [`tools/ctx-audit.ts`](tools/ctx-audit.ts) and
-[Reproducing the numbers](#reproducing-the-numbers) for the procedure.
+[Measuring your own setup](#measuring-your-own-setup) for the procedure.
 
 ### Prefill comparison
 
@@ -100,9 +100,11 @@ the old bundle measurements nor extension deltas should be added to the current 
 | "install everything" stack                                  | 2366       | +1688 | **26** | 14369    | **16735** | **+15419** |
 
 The `TODO.md` convention and project `AGENTS.md` rows describe older instruction text, **not**
-this setup's current cost. A `.pi/tasks/` file is read on demand; its contents do not enter steady-state
-prefill. The larger extension costs are mostly resident tool schemas, not evidence that those features
-lack value. Zero-token wrappers still need a behavioural evaluation: see [No sandbox layer](#no-sandbox-layer-why-pi-sandbox-is-not-included).
+this setup's current cost. The "install everything" stack reached 26 active tools; its exact package
+manifest was not retained in this repo, so the figure is historical, not a reproducible benchmark
+for a typical installation. A `.pi/tasks/` file is read on demand and adds no steady-state content.
+Resident tool schemas account for much of the extension cost, but zero-token wrappers still need a
+behavioural evaluation: see [No sandbox layer](#no-sandbox-layer-why-pi-sandbox-is-not-included).
 
 ### `pi-herdsman` evaluation (Pi 0.87.1)
 
@@ -260,32 +262,22 @@ for untrusted repositories or unattended work. This setup does not ship one:
 - **Gondolin:** host Pi with tools routed to a local Linux micro-VM (QEMU; Node ≥ 23.6).
 - **OpenShell:** policy-controlled filesystem, process, network, and credential access.
 
-## Reproducing the numbers
+## Measuring your own setup
 
-Everything above comes from `tools/`:
+**This setup:** `./test-bundle.sh` installs into a scratch agent directory, asserts what loads,
+and prints costs for both `AGENTS.md` variants. It needs `pi`, `node`, and `python3`; prompt dumps
+need no provider key. The full test also inspects the Brave key store and may temporarily store a
+dummy key and request `api.search.brave.com` (see [README](README.md#verify-it-works)).
+
+**An extension:** measure a bare Pi scenario and the candidate in separate agent directories:
 
 ```bash
-# 1. baseline: run pi in an isolated agent dir with the audit harness attached
 tools/measure.sh baseline
-
-# 2. add a candidate to that scenario's agent dir and measure again
 PI_CODING_AGENT_DIR=~/pi-audit/scenarios/todo pi install npm:@juicesharp/rpiv-todo
 tools/measure.sh todo
-
-# 3. compare everything you have measured so far
-tools/analyze.py
-tools/analyze.py todo lens --detail      # selected scenarios, with per-tool breakdown
+tools/analyze.py baseline todo --detail
 ```
 
-For this repo's own configuration, `./test-bundle.sh` does the same thing in a scratch agent
-directory (no API key, nothing of yours touched) and prints the numbers for both shapes: default and
-the lean `AGENTS.md`.
-
-Dumps and run logs land in `$PI_CTX_AUDIT_HOME/out/<scenario>/` (default `~/pi-audit`). The whole
-loop is offline-friendly: set `PI_OFFLINE=1` and nothing touches the network except your own
-`pi install`.
-
-`test-bundle.sh` does the whole thing for this repo's own configuration — install into a scratch
-agent dir, dump the prompt, print the cost of the full and lean `AGENTS.md`, and confirm that no
-sandbox layer is loaded. It needs `pi`, `node` and `python3` on `PATH` and no API key,
-because the dump happens before the auth check.
+`pi install` can access the network; `tools/measure.sh` sets `PI_OFFLINE=1` for its Pi run and
+needs no provider key. Dumps and logs land in `$PI_CTX_AUDIT_HOME/out/<scenario>/` (default
+`~/pi-audit`); see [`tools/ctx-audit.ts`](tools/ctx-audit.ts) for the capture procedure.

@@ -222,9 +222,10 @@ print_next_steps() {
    3. Brave key:                  pbpaste | node $AGENT_DIR/skills/brave-search/brave.mjs setkey
    4. Start a project:            cd /path/to/project && pi
       - approve the project-trust prompt once, or run /trust
-      - copy the project templates in and fill in the commands:
-          cp $REPO_DIR/templates/project/AGENTS.md /path/to/project/AGENTS.md
-          cp $REPO_DIR/templates/project/TODO.md   /path/to/project/TODO.md
+      - for new projects only, copy templates without overwriting existing files:
+          cp -n "$REPO_DIR/templates/project/AGENTS.md" "/path/to/project/AGENTS.md"
+          cp -n "$REPO_DIR/templates/project/TODO.md"   "/path/to/project/TODO.md"
+      - if AGENTS.md or TODO.md exists, merge the task convention; preserve commands and backlog
    5. Herdr (for subagents):      brew install herdr && herdr
       - Herdr -> Settings -> Integrations -> install the Pi integration
       - verify with: herdr integration status
