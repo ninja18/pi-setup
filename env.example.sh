@@ -1,6 +1,6 @@
 # Optional environment for pi. Source it from ~/.zshrc if you want these applied globally:
 #
-#   echo 'source ~/pi-setup/env.example.sh' >> ~/.zshrc
+#   echo 'source ~/diet-pi/env.example.sh' >> ~/.zshrc
 #
 # Everything is commented out by default; none of it is needed for the setup to work.
 

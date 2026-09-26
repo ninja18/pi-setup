@@ -80,7 +80,7 @@ parse_args() {
 }
 
 setup_scratch() {
-  SCRATCH="$(mktemp -d "${TMPDIR:-/tmp}/pi-setup-test.XXXXXX")"
+  SCRATCH="$(mktemp -d "${TMPDIR:-/tmp}/diet-pi-test.XXXXXX")"
   AGENT_DIR="$SCRATCH/agent"
   WORK_DIR="$SCRATCH/work"
   mkdir -p "$AGENT_DIR" "$WORK_DIR"

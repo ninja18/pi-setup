@@ -1,4 +1,4 @@
-# pi-setup
+# diet-pi
 
 A minimal, **measured** configuration for [pi](https://pi.dev) on macOS. Plans, task tracking,
 search, and delegation use files or opt-in skills instead of always-on extension tools. Global
@@ -54,8 +54,8 @@ and [failure modes](SANDBOX-FAILURE-MODES.md) for evidence; use a container/VM w
 ## Install
 
 ```bash
-git clone <this-repo> ~/pi-setup
-cd ~/pi-setup
+git clone <this-repo> ~/diet-pi
+cd ~/diet-pi
 ./install.sh --dry-run        # see exactly what would change
 ./install.sh                  # apply the full setup
 ```
@@ -79,7 +79,7 @@ Then, once:
 3. **Herdr (for subagents).** `brew install herdr`, then Herdr → Settings → Integrations → install
    the Pi integration, and check `herdr integration status`. Start Pi inside Herdr before invoking
    `/skill:herdr-subagents`.
-4. **Optional shell environment.** `echo 'source ~/pi-setup/env.example.sh' >> ~/.zshrc` — that file
+4. **Optional shell environment.** `echo 'source ~/diet-pi/env.example.sh' >> ~/.zshrc` — that file
    ships with everything commented out.
 
 ## Per project
@@ -87,8 +87,8 @@ Then, once:
 For a **new** project, copy the templates without overwriting existing files:
 
 ```bash
-cp -n ~/pi-setup/templates/project/AGENTS.md  /path/to/project/AGENTS.md
-cp -n ~/pi-setup/templates/project/TODO.md    /path/to/project/TODO.md
+cp -n ~/diet-pi/templates/project/AGENTS.md  /path/to/project/AGENTS.md
+cp -n ~/diet-pi/templates/project/TODO.md    /path/to/project/TODO.md
 ```
 
 If either file already exists, **merge it instead of replacing it**: keep project-specific commands
