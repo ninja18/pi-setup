@@ -22,34 +22,34 @@ So the design goal was: **get the behavioural rails, without paying for tool sch
 
 ## Principles
 
-1. **Keep Pi small and maintainable.** Add conventions before new resident tools or another
-   extension to maintain.
-2. **Prefer files when they suffice.** `AGENTS.md` costs instruction tokens; `TODO.md` and
+1. **Add behaviours instead of context bloat**. Add developer behaviours instead of context bloat through avoidable extensions.
+2. **Keep Pi small and maintainable.** Pi suggests to develop own extensions which require maintenance. This setup aims to make maintenance rare by avoiding custom extensions.
+3. **Prefer files when they suffice.** `AGENTS.md` costs instruction tokens; `TODO.md` and
    `.pi/tasks/` are read when needed. Prompt templates and user-invoked skills avoid tool-schema
    cost until used.
-3. **Load capabilities on demand.** Skill descriptions can appear in the prompt, while skill
+4. **Load capabilities on demand.** Skill descriptions can appear in the prompt, while skill
    bodies load only when used; `disable-model-invocation: true` removes even that description.
-4. **Separate advice from enforcement.** `AGENTS.md` guides the model but cannot constrain
+5. **Separate advice from enforcement.** `AGENTS.md` guides the model but cannot constrain
    filesystem or network access. This setup does not claim to provide an OS boundary; see
    [No sandbox layer](#no-sandbox-layer-why-pi-sandbox-is-not-included).
-5. **Measure on your own machine.** Compare active prompt and tool costs, not just the features
+6. **Measure on your own machine.** Compare active prompt and tool costs, not just the features
    a package offers; use the harness in `tools/`.
 
 ## How each choice was made
 
-| Need | Choice here | Extensions considered | Reason |
-| ---- | ----------- | --------------------- | ------ |
-| Plan before editing | `/plan` template | `@plannotator/pi-extension`, `@narumitw/pi-plan-mode` | A plan without always-active mode tools; no enforced write gate. |
-| Track work | `TODO.md` backlog + ignored `.pi/tasks/` | `@juicesharp/rpiv-todo` | Project state and approved plans survive sessions without a todo extension. |
-| Delegate | User-invoked Herdr skill | `pi-subagents`, `pi-herdr-subagents`, `pi-herdsman` | Disposable or persistent children without resident orchestration tools. |
-| Search + fetch | Brave skill + script | `pi-web-access`, `pi-mcp-adapter` | One search API without an MCP server or resident search tools. |
-| Control writes/network | No sandbox shipped | `pi-sandbox`, `@gotgenes/pi-permission-system` | The evaluated guardrail impaired ordinary work and did not enforce its domain list. |
-| Instructions | Default and lean `AGENTS.md` | — | Choose detail or a lower fixed instruction cost. |
+| Need                   | Choice here                              | Extensions considered                                 | Reason                                                                              |
+| ---------------------- | ---------------------------------------- | ----------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| Plan before editing    | `/plan` template                         | `@plannotator/pi-extension`, `@narumitw/pi-plan-mode` | A plan without always-active mode tools; no enforced write gate.                    |
+| Track work             | `TODO.md` backlog + ignored `.pi/tasks/` | `@juicesharp/rpiv-todo`                               | Project state and approved plans survive sessions without a todo extension.         |
+| Delegate               | User-invoked Herdr skill                 | `pi-subagents`, `pi-herdr-subagents`, `pi-herdsman`   | Disposable or persistent children without resident orchestration tools.             |
+| Search + fetch         | Brave skill + script                     | `pi-web-access`, `pi-mcp-adapter`                     | One search API without an MCP server or resident search tools.                      |
+| Control writes/network | No sandbox shipped                       | `pi-sandbox`, `@gotgenes/pi-permission-system`        | The evaluated guardrail impaired ordinary work and did not enforce its domain list. |
+| Instructions           | Default and lean `AGENTS.md`             | —                                                     | Choose detail or a lower fixed instruction cost.                                    |
 
-*These are evaluated alternatives, not part of the default setup. See
+_These are evaluated alternatives, not part of the default setup. See
 [Why certain things were not added](#why-certain-things-were-not-added) for the main extension trade-offs;
 [Herdsman](#pi-herdsman-evaluation-pi-0871) and the [sandbox decision](#no-sandbox-layer-why-pi-sandbox-is-not-included)
-are covered separately.* See [prefill measurements](#prefill-comparison) for the costs.
+are covered separately._ See [prefill measurements](#prefill-comparison) for the costs.
 
 ## Measurements
 
@@ -70,34 +70,34 @@ measurements. **Compare deltas only within each group**: the two bare Pi baselin
 the old bundle measurements nor extension deltas should be added to the current totals. Re-run
 `./test-bundle.sh` for the current configuration on your machine.
 
-| Configuration                                               | Prompt tok | Δ     | Tools  | Tool tok | Prefill   | vs bare    |
-| ----------------------------------------------------------- | ---------- | ----- | ------ | -------- | --------- | ---------- |
-| **Current bundle (Pi 0.86.1)**                              | —          | —     | —      | —        | —         | —          |
-| bare pi                                                     | —          | —     | 4      | —        | **1304**  | —          |
-| **this setup**, default                                     | —          | —     | 4      | —        | **3451**  | +2147      |
-| **this setup**, lean `AGENTS.md`                            | —          | —     | 4      | —        | **2987**  | +1683      |
-| **Historical extension comparison (Pi 0.85.1)**             | —          | —     | —      | —        | —         | —          |
-| bare pi                                                     | 678        | 0     | 4      | 638      | **1316**  | —          |
-| `@gotgenes/pi-permission-system`                            | 678        | 0     | 4      | 638      | **1316**  | **+0**     |
-| silent skills (`disable-model-invocation`)                  | 678        | 0     | 4      | 638      | **1316**  | **+0**     |
-| `/plan` prompt template                                     | 678        | 0     | 4      | 638      | **1316**  | **+0**     |
-| `TODO.md` AGENTS.md convention (historical)                  | 880        | +202  | 4      | 638      | **1518**  | +202       |
-| project `AGENTS.md`                                         | 945        | +267  | 4      | 638      | **1583**  | +267       |
-| 6 mattpocock skills (2 model-invoked)                       | 1006       | +328  | 4      | 638      | **1644**  | +328       |
-| `@narumitw/pi-plan-mode`                                    | 678        | 0     | 6      | 1116     | **1794**  | +478       |
-| Plannotator plan mode                                       | 911        | +233  | 6      | 886      | **1797**  | +481       |
-| `@juicesharp/rpiv-advisor`                                  | 1186       | +508  | 5      | 753      | **1939**  | +623       |
-| `@juicesharp/rpiv-ask-user-question`                        | 1012       | +334  | 5      | 1565     | **2577**  | +1261      |
-| `@juicesharp/rpiv-todo`                                     | 1108       | +430  | 5      | 1112     | **2220**  | +904       |
-| `pi-mcp-adapter`                                            | 725        | +47   | 6      | 1668     | **2393**  | +1077      |
-| `pi-lens` (lean, 6-tool allowlist)                          | 1193       | +515  | 6      | 1543     | **2736**  | +1420      |
-| all 38 mattpocock skills installed                          | 2319       | +1641 | 4      | 638      | **2957**  | +1641      |
-| `pi-herdr-subagents`                                        | 1445       | +767  | 8      | 1989     | **3434**  | +2118      |
-| `pi-lens` (`--exclude-tools`, 9 tools)                      | 1242       | +564  | 9      | 2516     | **3758**  | +2442      |
-| `pi-web-access`                                             | 839        | +161  | 8      | 3376     | **4215**  | +2899      |
-| `pi-lens` (default)                                         | 1374       | +696  | **17** | 5344     | **6718**  | +5402      |
-| `pi-subagents`                                              | 1031       | +353  | 6      | 6203     | **7234**  | +5918      |
-| "install everything" stack                                  | 2366       | +1688 | **26** | 14369    | **16735** | **+15419** |
+| Configuration                                   | Prompt tok | Δ     | Tools  | Tool tok | Prefill   | vs bare    |
+| ----------------------------------------------- | ---------- | ----- | ------ | -------- | --------- | ---------- |
+| **Current bundle (Pi 0.86.1)**                  | —          | —     | —      | —        | —         | —          |
+| bare pi                                         | —          | —     | 4      | —        | **1304**  | —          |
+| **this setup**, default                         | —          | —     | 4      | —        | **3451**  | +2147      |
+| **this setup**, lean `AGENTS.md`                | —          | —     | 4      | —        | **2987**  | +1683      |
+| **Historical extension comparison (Pi 0.85.1)** | —          | —     | —      | —        | —         | —          |
+| bare pi                                         | 678        | 0     | 4      | 638      | **1316**  | —          |
+| `@gotgenes/pi-permission-system`                | 678        | 0     | 4      | 638      | **1316**  | **+0**     |
+| silent skills (`disable-model-invocation`)      | 678        | 0     | 4      | 638      | **1316**  | **+0**     |
+| `/plan` prompt template                         | 678        | 0     | 4      | 638      | **1316**  | **+0**     |
+| `TODO.md` AGENTS.md convention (historical)     | 880        | +202  | 4      | 638      | **1518**  | +202       |
+| project `AGENTS.md`                             | 945        | +267  | 4      | 638      | **1583**  | +267       |
+| 6 mattpocock skills (2 model-invoked)           | 1006       | +328  | 4      | 638      | **1644**  | +328       |
+| `@narumitw/pi-plan-mode`                        | 678        | 0     | 6      | 1116     | **1794**  | +478       |
+| Plannotator plan mode                           | 911        | +233  | 6      | 886      | **1797**  | +481       |
+| `@juicesharp/rpiv-advisor`                      | 1186       | +508  | 5      | 753      | **1939**  | +623       |
+| `@juicesharp/rpiv-ask-user-question`            | 1012       | +334  | 5      | 1565     | **2577**  | +1261      |
+| `@juicesharp/rpiv-todo`                         | 1108       | +430  | 5      | 1112     | **2220**  | +904       |
+| `pi-mcp-adapter`                                | 725        | +47   | 6      | 1668     | **2393**  | +1077      |
+| `pi-lens` (lean, 6-tool allowlist)              | 1193       | +515  | 6      | 1543     | **2736**  | +1420      |
+| all 38 mattpocock skills installed              | 2319       | +1641 | 4      | 638      | **2957**  | +1641      |
+| `pi-herdr-subagents`                            | 1445       | +767  | 8      | 1989     | **3434**  | +2118      |
+| `pi-lens` (`--exclude-tools`, 9 tools)          | 1242       | +564  | 9      | 2516     | **3758**  | +2442      |
+| `pi-web-access`                                 | 839        | +161  | 8      | 3376     | **4215**  | +2899      |
+| `pi-lens` (default)                             | 1374       | +696  | **17** | 5344     | **6718**  | +5402      |
+| `pi-subagents`                                  | 1031       | +353  | 6      | 6203     | **7234**  | +5918      |
+| "install everything" stack                      | 2366       | +1688 | **26** | 14369    | **16735** | **+15419** |
 
 The `TODO.md` convention and project `AGENTS.md` rows describe older instruction text, **not**
 this setup's current cost. The "install everything" stack reached 26 active tools; its exact package
@@ -112,9 +112,9 @@ behavioural evaluation: see [No sandbox layer](#no-sandbox-layer-why-pi-sandbox-
 `>=0.87.0 <0.88.0`; mixing those numbers into the Pi 0.85.1 table would imply a comparison the tool
 does not support.
 
-| Scenario | Prefill | Change |
-| --- | ---: | ---: |
-| compatible Pi baseline | **3129** | — |
+| Scenario                 |  Prefill |             Change |
+| ------------------------ | -------: | -----------------: |
+| compatible Pi baseline   | **3129** |                  — |
 | baseline + `pi-herdsman` | **5472** | **+2343 / +74.9%** |
 
 The increase came from orchestration instructions plus five always-active coordination tools:

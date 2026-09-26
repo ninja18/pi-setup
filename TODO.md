@@ -9,3 +9,6 @@ Nothing pending.
 ## Done
 
 - [x] (2026-09-26) Add scoped ephemeral task files for complex feature implementation
+
+- [x] (2026-09-21) Hand guardrail brainstorming to the new agent in `../guardrail-lab`
+- [x] (2026-09-21) Analyse `@gotgenes/pi-permission-system` and write PERMISSION-SYSTEM-ANALYSIS.md
