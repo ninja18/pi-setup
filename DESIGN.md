@@ -49,52 +49,39 @@ So the design goal was: **get the behavioural rails, without paying for tool sch
 | Delegate to subagents        | `pi-subagents` **+5918** · `pi-herdr-subagents` **+2118** · `pi-herdsman` **+2343 / +74.9% prefill** on compatible Pi 0.87.1 · custom Herdr skill **+0** | custom `herdr-subagents` skill, invoked on demand | Basic orchestration needs two paths only: disposable children that leave no Pi session and persistent branches whose panes stay open. The user-invoked skill supplies both for zero steady-state context; the broader Herdsman tool surface is not resident on every request. |
 | Web search + fetch           | `pi-web-access` **+2899** · `pi-mcp-adapter` + a Brave MCP server **+1077** · Brave skill + script **~+110**                                                                                         | skill + dependency-free script                   | You already pay for a search API. 26× cheaper than `pi-web-access`, no MCP server to keep running.                                                                                                                                                                                                                                             |
 | Constrain writes and network | `pi-sandbox` **+0** · `@gotgenes/pi-permission-system` **+0** · container/VM (separate concern)                                                                                                      | **nothing** — measured, then rejected               | Both cost zero prompt tokens because they wrap `bash` and gate the file tools instead of registering new tools. `pi-sandbox` was installed and used for real work before being removed: the failures it produces cannot be configured away, and making toolchains build inside it needed per-toolchain workarounds. See [No sandbox layer](#no-sandbox-layer-why-pi-sandbox-is-not-included).                                                                             |
-| Instructions to the model    | One big `AGENTS.md` vs a leaner one                                                                                                                                                                  | Both shipped                                     | The full file is ~910 tokens/turn, the lean variant ~480. It is the single largest line item in the whole setup, so the choice belongs to you rather than to a default.                                                                                                                                                                        |
+| Instructions to the model    | One big `AGENTS.md` vs a leaner one                                                                                                                                                                  | Both shipped                                     | The current global files estimate at 1081 / 618 tokens (default / lean). They are the largest fixed instruction cost, so the choice belongs to you.                                                                                                                                                                        |
 
 ## Measurements
 
 ### Method
 
-A small extension (`tools/ctx-audit.ts`) hooks `session_start` and writes four things to disk:
+Measurements capture Pi's assembled prompt and **active** tool schemas before the first model
+call, without an API key. Prefill is their combined cost using Pi's `ceil(chars / 4)` estimator,
+not an exact provider token count. Each delta is compared with a bare Pi run in the same environment;
+paths and Pi versions can change absolute totals. Skills contribute descriptions until invoked;
+registered commands and templates add nothing until used. Wrappers such as permission and sandbox
+extensions add no tool schema. See [`tools/ctx-audit.ts`](tools/ctx-audit.ts) and
+[Reproducing the numbers](#reproducing-the-numbers) for the procedure.
 
-- `ctx.getSystemPrompt()` — the assembled system prompt, including active-tool snippets, guidelines,
-  the skills catalogue, and any `AGENTS.md` content,
-- `pi.getAllTools()` — every registered tool with its description and JSON schema,
-- `pi.getActiveTools()` — the subset the model actually receives,
-- `pi.getCommands()` — registered slash commands (proof that an extension, skill, or template
-  actually loaded).
+### Prefill comparison
 
-`session_start` fires **before** the first model call, so the whole thing works with no API key: start
-pi in print mode, let it fail at the auth check, read the dump.
-
-Rules that materially change the answer:
-
-- **Tokens = `ceil(chars / 4)`** — pi's own estimator (`estimateTokens` in `core/compaction`). It is a
-  consistent yardstick, not a provider-exact tokenizer; schema-heavy JSON usually tokenizes _better_
-  than 4 chars/token, so treat the absolute extension costs as upper bounds.
-- **Count active tools only.** A bare pi _registers_ eight tools and _activates_ four. Counting the
-  registered set inflates every scenario.
-- **Tool cost = name + description + `JSON.stringify(parameters)`.** Extension tools can be enormous:
-  `pi-subagents`' tool is 4926 characters of description and 13810 of schema.
-- **Skills cost only their name and description** in the prompt; bodies load on use.
-- **Prompt templates and registered commands cost 0** until invoked.
-- **Permission and sandbox extensions cost 0** prompt tokens: they wrap `bash` and gate the file
-  tools instead of registering new tools.
-
-### Historical extension comparison (Pi 0.85.1)
-
-Prefill = system prompt + active tool schemas. Absolute figures differ across platforms and pi
-releases by a few tokens, because the working-directory path is part of the system prompt, so the
-_ratios_ are what matter. Extension and package rows were measured on Linux aarch64; the scoped task-file
-configuration is measured separately below.
+Current bundle totals were measured offline on macOS; extension rows are historical Linux aarch64
+measurements. **Compare deltas only within each group**: the two bare Pi baselines differ, and neither
+the old bundle measurements nor extension deltas should be added to the current totals. Re-run
+`./test-bundle.sh` for the current configuration on your machine.
 
 | Configuration                                               | Prompt tok | Δ     | Tools  | Tool tok | Prefill   | vs bare    |
 | ----------------------------------------------------------- | ---------- | ----- | ------ | -------- | --------- | ---------- |
+| **Current bundle (Pi 0.86.1)**                              | —          | —     | —      | —        | —         | —          |
+| bare pi                                                     | —          | —     | 4      | —        | **1304**  | —          |
+| **this setup**, default                                     | —          | —     | 4      | —        | **3451**  | +2147      |
+| **this setup**, lean `AGENTS.md`                            | —          | —     | 4      | —        | **2987**  | +1683      |
+| **Historical extension comparison (Pi 0.85.1)**             | —          | —     | —      | —        | —         | —          |
 | bare pi                                                     | 678        | 0     | 4      | 638      | **1316**  | —          |
 | `@gotgenes/pi-permission-system`                            | 678        | 0     | 4      | 638      | **1316**  | **+0**     |
 | silent skills (`disable-model-invocation`)                  | 678        | 0     | 4      | 638      | **1316**  | **+0**     |
 | `/plan` prompt template                                     | 678        | 0     | 4      | 638      | **1316**  | **+0**     |
-| `TODO.md` AGENTS.md convention (historical)              | 880        | +202  | 4      | 638      | **1518**  | +202       |
+| `TODO.md` AGENTS.md convention (historical)                  | 880        | +202  | 4      | 638      | **1518**  | +202       |
 | project `AGENTS.md`                                         | 945        | +267  | 4      | 638      | **1583**  | +267       |
 | 6 mattpocock skills (2 model-invoked)                       | 1006       | +328  | 4      | 638      | **1644**  | +328       |
 | `@narumitw/pi-plan-mode`                                    | 678        | 0     | 6      | 1116     | **1794**  | +478       |
@@ -104,8 +91,6 @@ configuration is measured separately below.
 | `@juicesharp/rpiv-todo`                                     | 1108       | +430  | 5      | 1112     | **2220**  | +904       |
 | `pi-mcp-adapter`                                            | 725        | +47   | 6      | 1668     | **2393**  | +1077      |
 | `pi-lens` (lean, 6-tool allowlist)                          | 1193       | +515  | 6      | 1543     | **2736**  | +1420      |
-| **this setup**, default (`AGENTS.md` + project template + skill) | 2525   | +1847 | 4      | 638      | **3163**  | +1847      |
-| **this setup**, lean `AGENTS.md`                            | 2098       | +1420 | 4      | 638      | **2736**  | +1420      |
 | all 38 mattpocock skills installed                          | 2319       | +1641 | 4      | 638      | **2957**  | +1641      |
 | `pi-herdr-subagents`                                        | 1445       | +767  | 8      | 1989     | **3434**  | +2118      |
 | `pi-lens` (`--exclude-tools`, 9 tools)                      | 1242       | +564  | 9      | 2516     | **3758**  | +2442      |
@@ -114,37 +99,10 @@ configuration is measured separately below.
 | `pi-subagents`                                              | 1031       | +353  | 6      | 6203     | **7234**  | +5918      |
 | "install everything" stack                                  | 2366       | +1688 | **26** | 14369    | **16735** | **+15419** |
 
-`./test-bundle.sh` prints the exact figures for your machine for both shapes of this setup — default
-and lean `AGENTS.md` — as ~3163 / ~2736 from a `$TMPDIR` scratch directory.
-
-One note on these two rows: they were re-measured twice on macOS. First after the project `AGENTS.md`
-template was rewritten to be language-agnostic rather than Node/TypeScript flavoured: **2804 / 2362** →
-**3049 / 2665** (that template is part of the prompt, and grew from **+267** to **+512** tokens). Then
-after the herdr pane guidance was added to the global `AGENTS.md`, and with the sandbox gone: →
-**3163 / 2736**. Part of that last move is the scratch directory path, which is part of the prompt —
-re-running `./test-bundle.sh` gives your own figures. The other rows in this table were measured
-without the project template, so their deltas are unaffected.
-
-### Current bundle result (Pi 0.86.1)
-
-On macOS, `./test-bundle.sh` measured the scoped task-file configuration at **3338** prefill tokens with
-the default `AGENTS.md`, or **2902** with `AGENTS.lean.md`. A separately measured bare Pi baseline was
-**1302**, making the respective overheads **+2036** and **+1600**. The `.pi/tasks/*.md` files are not loaded
-until an agent reads one; the additional steady-state cost is the concise lifecycle instruction only.
-
-Re-run `./test-bundle.sh` for your own platform; its scratch-directory path contributes a few tokens.
-
-Reading the table:
-
-- pi's floor is real, and it is easy to lose. A handful of packages took a comparable setup from
-  ~1.3k to ~16.7k — 12×. The free ones were the ones that shipped files, templates or wrappers rather
-  than tool schemas.
-- The cheap wins are files: the `TODO.md` and `.pi/tasks/` conventions add instruction text, rather than a resident todo-tool schema (+904 in the measured extension).
-- The expensive things are tool _schemas_, not features. `pi-subagents` and `pi-lens` are 11k tokens
-  of schema between them.
-- Cost is not quality, and free is not free. The cheapest layers are the ones that wrap `bash` or
-  ship markdown rather than tool schemas — which is why a guardrail looks like a bargain, and why
-  `pi-sandbox` still had to be judged on its behaviour and removed.
+The `TODO.md` convention and project `AGENTS.md` rows describe older instruction text, **not**
+this setup's current cost. A `.pi/tasks/` file is read on demand; its contents do not enter steady-state
+prefill. The larger extension costs are mostly resident tool schemas, not evidence that those features
+lack value. Zero-token wrappers still need a behavioural evaluation: see [No sandbox layer](#no-sandbox-layer-why-pi-sandbox-is-not-included).
 
 ### `pi-herdsman` evaluation (Pi 0.87.1)
 
@@ -182,164 +140,125 @@ Each of these is one command away. The point is that you should add them knowing
 
 ### Plan-mode extensions (`@plannotator/pi-extension`, `@narumitw/pi-plan-mode`, …)
 
-**+481 / +478 tokens, resident.** A plan-mode extension is a state machine: it holds phase state,
-injects framing instructions, and reconfigures the active tool set. That is worth paying for if you
-want a _hard gate_ — Plannotator restricts writes to the plan file, blocks destructive commands, and
-refuses to execute until you approve in a browser UI with annotations. It is not worth paying for if
-what you want is "a plan before we start", which the `/plan` template does for `+0`.
-
-What you give up by using the template: the model _can_ ignore it, whereas a mode physically removes
-the write tools. Start with the template; add Plannotator when you catch yourself wanting the gate.
+- **Cost:** +481 tokens (Plannotator) or +478 (`pi-plan-mode`), resident.
+- **Offers:** A stateful plan mode; Plannotator also blocks writes outside the plan and requires
+  browser approval with annotations.
+- **Here:** The `/plan` prompt template (+0) produces a plan for user approval.
+- **Trade-off:** A model can ignore a template; a mode can remove write tools. Use Plannotator
+  when you need an enforced gate.
 
 ### A todo extension (`@juicesharp/rpiv-todo`)
 
-**+904 tokens.** Its advantages over files are real: a live overlay, a dependency graph with cycle
-detection, structured CRUD that survives `/reload` and compaction via branch replay. This setup instead
-keeps the durable project backlog in `TODO.md`, and turns an approved complex-feature plan into a scoped,
-locally ignored `.pi/tasks/<slug>.md` file. The task file survives new sessions and compaction, retains one
-active checked item and its validation evidence, and is deleted after final validation; it never pollutes the
-backlog. It has no tool schema or overlay. If you need the live UI, dependency graph, or long single-session
-state replay routinely, the extension earns its tokens; otherwise the files win.
+- **Cost:** +904 tokens, resident.
+- **Offers:** A live overlay, dependency graph with cycle detection, and structured CRUD with
+  `/reload` and compaction replay.
+- **Here:** `TODO.md` holds the project backlog; locally ignored `.pi/tasks/` checklists track
+  approved complex plans across sessions, then are deleted after validation.
+- **Trade-off:** Files have no live UI, dependency graph, or automatic branch replay; use the
+  extension if those are worth its permanent schema cost.
 
 ### `pi-lens` — the biggest single "no"
 
-**+5402 tokens as shipped (17 active tools)**. What it does is genuinely good: LSP diagnostics on
-every write/edit, impact-cascade diagnostics on affected files, linters and typecheckers, ast-grep and
-tree-sitter rules, ranked `symbol_search`, 19 LSP navigation operations, plus guards — a read-guard
-that blocks edits without a prior read, and a git-guard that holds commits while findings are open.
-Those guards are the interesting part, because they are _enforcement_ in a way prompt text never is.
+- **Cost:** +5402 tokens as shipped (17 active tools); +2442 with 9 tools or +1420 with a
+  6-tool allowlist.
+- **Offers:** LSP and cascade diagnostics, linters, ast-grep, ranked symbol search, navigation,
+  and read/commit guards that actually enforce their rules.
+- **Here:** Project checks, targeted code search, and review; no resident diagnostics extension.
+- **Trade-off:** No automatic diagnostics or enforced guards. Add `pi-lens` when it saves enough
+  debugging time, but install language servers first and limit the active tools.
 
-Why it is not in the default set anyway:
+Do not assume its advertised dynamic loading reduces cost: with pi-lens 4.2.1 and Pi 0.85.1, all
+13 tools activated. A tested `session_start` attempt to deactivate tools was undone by pi-lens's
+handler (still 17 active). Check `/lens-tools`; CLI flags worked:
 
-- It costs ~4× this entire setup, before it has found a single issue.
-- Its documentation describes a dynamic-tooling mode (5 tools always active, situational tools
-  activated on demand through a loader). On pi-lens 4.2.1 with pi 0.85.1, **all 13 tools activated** —
-  check `/lens-tools` on your machine before assuming you get the lean path.
-- Lazy-loading it yourself does **not** work: a `session_start` hook that calls `setActiveTools()`
-  runs before pi-lens' own handler, so the tools come straight back (tested: still 17 active). The
-  reliable levers are the CLI flags only:
+```bash
+# 9 tools, +2442 — drops the situational tools
+pi --exclude-tools ast_grep_search,ast_grep_replace,ast_grep_outline,lsp_navigation,lens_diagnostic_mark,project_report,effective_config,pi_lens_activate_tools
 
-  ```bash
-  # 9 tools, +2442 — drops the situational tools
-  pi --exclude-tools ast_grep_search,ast_grep_replace,ast_grep_outline,lsp_navigation,lens_diagnostic_mark,project_report,effective_config,pi_lens_activate_tools
-
-  # 6 tools, +1420 — keeps diagnostics + symbol search, the highest-value surfaces
-  alias pil='pi --tools read,bash,edit,write,lens_diagnostics,symbol_search'
-  ```
-
-- It needs language servers and linters present to do anything, so it is dead weight on a fresh repo
-  with no toolchain yet.
-
-Add it when the project has real code and you are in refactor or debugging loops — and add it through
-the alias, not at full width. Then check whether it reduces round-trips enough to justify itself.
+# 6 tools, +1420 — keeps diagnostics + symbol search
+alias pil='pi --tools read,bash,edit,write,lens_diagnostics,symbol_search'
+```
 
 ### `@juicesharp/rpiv-ask-user-question` — the closest call
 
-**+1261 tokens** (927 of which is the `ask_user_question` schema; the rest is guidance text). The
-feature is good: up to four questions in one dialog, typed options with descriptions, a free-text row
-on every question, notes, a submit summary, markdown previews, and graceful removal in
-non-interactive runs.
-
-It is left out because it overlaps with two things already here: the `/plan` template ends with a
-"Questions" section, and `AGENTS.md` says to stop and confirm anything spanning more than two files.
-The unique value is _mid-execution_ — the agent hits an unforeseen fork halfway through implementing
-and asks you with buttons instead of guessing. If that is the failure mode you actually feel, install
-it (and consider `--exclude-tools ask_user_question` on approved-plan runs so you only pay when
-exploring). You can trim the 334 tokens of guidance via
-`~/.config/rpiv-ask-user-question/config.json`; you cannot trim the 927-token schema.
+- **Cost:** +1261 tokens (927 schema + 334 guidance).
+- **Offers:** Up to four questions per dialog, typed choices, free text, notes, and markdown previews;
+  removes itself gracefully in non-interactive runs.
+- **Here:** `/plan` ends with questions, and `AGENTS.md` requires confirmation before broad changes.
+- **Trade-off:** No button-driven questions at an unexpected mid-task fork. Install it if that matters;
+  exclude its tool on approved-plan runs to avoid the schema cost then. Guidance can be trimmed via
+  `~/.config/rpiv-ask-user-question/config.json`, but the schema cannot.
 
 ### `pi-web-access`
 
-**+2899 tokens** for four tools (`web_search`, `fetch_content`, `source_check`, `get_search_content`).
-Excellent coverage — Brave, Exa, Tavily, Kagi, SearXNG and more, plus GitHub, YouTube, PDFs and local
-video. It is simply 26× the cost of the Brave skill + script for a search-API shape most people
-already pay for. If you want `source_check`-style citations or YouTube/PDF support routinely, the
-calculation changes.
+- **Cost:** +2899 tokens for four active tools.
+- **Offers:** Search and fetching across multiple providers, source checking, GitHub, YouTube, PDFs,
+  and local video.
+- **Here:** The Brave skill and script (~+110 tokens) cover web search and fetching on demand.
+- **Trade-off:** No built-in source checking or specialized media support. Use `pi-web-access` if
+  those are routine needs.
 
 ### `pi-subagents`
 
-**+5918 tokens** — the most expensive single addition measured, and only 4.5× pi's floor on its own.
-The implementation is not the problem: it ships `scout`/`researcher`/`worker`/`reviewer`/`oracle`
-roles, background children, a FleetView panel and a live inspector with transcript reading and
-steering. The problem is that a delegation tool with that much configuration surface has a ~12 KB
-description-plus-schema that is re-sent on every request whether or not you delegate. herdr gives you
-visible panes for `+0`; use that until you specifically want scripted multi-agent workflows.
+- **Cost:** +5918 tokens, the largest single addition measured.
+- **Offers:** `scout`/`researcher`/`worker`/`reviewer`/`oracle` roles, background children,
+  FleetView, and live transcript inspection and steering.
+- **Here:** The user-invoked Herdr skill (+0 steady-state) offers visible ephemeral or persistent
+  Pi children.
+- **Trade-off:** No scripted multi-agent roles or FleetView. Adopt `pi-subagents` if those
+  workflows justify its always-active delegation schema.
 
 ### MCP (`pi-mcp-adapter`)
 
-**+1077 tokens of fixed cost**, which is cheaper than most single-purpose MCP-consuming extensions —
-the adapter exposes one gateway tool and fetches server schemas on demand, so adding servers is
-nearly free. It is excluded because nothing here requires MCP: one search API is cheaper as a skill,
-and pi's own guidance is to prefer a script over a server when the surface is small. Add it if you
-have a real MCP estate (Linear, Sentry, a database) to talk to.
+- **Cost:** +1077 tokens of fixed gateway-tool cost; server schemas load on demand.
+- **Offers:** One adapter for multiple MCP services, such as Linear, Sentry, and databases.
+- **Here:** A skill and script handle the one search API needed by this setup.
+- **Trade-off:** No general MCP access. Add the adapter if you actually use several MCP servers.
 
 ## No sandbox layer: why pi-sandbox is not included
 
-`pi-sandbox` was installed, used on real work, and removed. It is a well-built extension: it wraps
-`bash` (and your `!` commands) in a macOS `sandbox-exec` profile, intercepts `read`, `write` and `edit`
-in-process against the same policy, prompts for writes and reads outside the project, and hard-blocks
-`denyWrite` paths (`.env`, `*.pem`, credential files) with no prompt. It costs **+0** prompt tokens.
-As a guardrail against mistakes, it worked.
+`pi-sandbox` was installed, used on real work, then removed. It wraps `bash` and `!` calls in
+macOS `sandbox-exec`, intercepts `read`/`write`/`edit`, prompts for access outside the project, and
+hard-blocks `denyWrite` paths such as `.env`, `*.pem`, and credentials. At **+0 prompt tokens**, it
+worked as a guardrail against mistakes. These failures outweighed that benefit:
 
-It is not in this repo because the cost is paid constantly, in the wrong place, on ordinary work.
-Three classes of failure could not be fixed at all:
+- **Process lifecycle (no config fix):** each `bash` call runs in a different sandbox. Signals
+  work only within `same-sandbox`; a server started in one call cannot be stopped in the next,
+  even by the same user. Start and stop it in one call or give lifecycle to the application.
+- **GUI and permissions (no practical config fix):** macOS blocks window-server, WebKit,
+  `cfprefsd`, audio, and `tccd` mach services. TCC microphone consent is not a sandbox config
+  key. An agent building or driving a GUI cannot exercise the app inside the sandbox.
+- **Silent or misleading failures:** mach-service and unix-socket denials do not prompt. Setuid
+  tools such as `ps`, `top`, and `sudo` cannot run. The extension mistakes some exec refusals
+  for blocked writes and suggests adding `/bin/ps` to `allowWrite`, which cannot fix them.
+- **Toolchain tax:** `cargo` needed registry/cache access, Go needed checksum-db writes, and
+  clang's module cache broke Objective-C module builds (including Tauri/Swift) without
+  `CLANG_MODULE_CACHE_PATH`. `xcrun` logged a cache error on every link. Each fix added
+  per-toolchain knowledge unrelated to the task.
+- **Network policy (deciding failure):** in pi-sandbox 0.6.8, `allowedDomains` acted as a
+  pre-approval list, not an enforced allowlist. Unlisted hosts returned HTTP 200 over both
+  HTTP and SOCKS proxies, even with hostnames assembled at runtime; direct DNS failed, but
+  proxy traffic was not rejected. That is unsafe to trust as a security boundary.
+- **Pane escape:** Herdr panes run outside Pi's subprocess sandbox. Allowing its control socket
+  lets sandboxed code invoke unsandboxed pane commands; starting Pi in a pane only protects
+  that child's own Pi tool calls.
 
-- **A process cannot be signalled from a later tool call.** Each `bash` call gets its own profile and
-  signals are allowed only within `same-sandbox`, so an agent can start a server and never stop it —
-  `Operation not permitted`, even though it is the same user and the same process it started. No
-  config key exists. In real use this was the failure that bit hardest, and the workaround (start and
-  stop inside one tool call, or hand lifecycle to the application) is a discipline the sandbox imposes
-  on every long-running command.
-- **GUI apps, audio, the microphone and TCC do not work.** The window server, WebKit, `cfprefsd` and
-  `tccd` are not on the mach-lookup allowlist, and TCC consent is not a config key. On a project that
-  builds or drives a GUI — the case that prompted this evaluation — the agent cannot touch the thing
-  being built.
-- **Some denials arrive with no prompt at all.** mach-service and unix-socket denials are silent, and
-  the extension misreads exec refusals as blocked writes, offering to add something like `/bin/ps` to
-  `allowWrite`, which cannot work.
+See [SANDBOX-FAILURE-MODES.md](SANDBOX-FAILURE-MODES.md) for the generated Seatbelt rules,
+reproductions, configuration levers, and version-specific caveats.
 
-Worse than the hard failures was the tax on ordinary tools. Making the toolchains this repo actually
-uses run inside the sandbox needed per-toolchain workarounds: `cargo` could not reach its registry or
-cache, Go could not write its checksum database, clang could not write its module cache (so builds of
-anything Objective-C — a Tauri or Swift target — fail unless `CLANG_MODULE_CACHE_PATH` is pointed
-somewhere else), and `xcrun` printed a cache error on every link. Each has a fix, and each fix is
-environment knowledge unrelated to the task at hand — bought for a layer its own documentation calls a
-guardrail rather than a boundary.
+**What replaces it:** no OS-level guardrail. Checkpoint with git before delegating, inspect diffs,
+commit small, use worktrees for larger jobs, and treat outside content as untrusted. `AGENTS.md` is
+advice; git is undo, not isolation. `@gotgenes/pi-permission-system` (+0 tokens) can gate tools and
+commands in-process against model mistakes, but cannot contain a determined agent.
 
-The deciding measurement was the network policy. `allowedDomains` reads like an allowlist, but on
-pi-sandbox 0.6.8 it behaves as a pre-approval list: requesting hosts that are not in it still returned
-200, over both the HTTP and the SOCKS proxy, including when the hostnames were built at runtime so no
-command scan could have approved them. Traffic is funnelled through the local proxy — direct DNS fails
-— but nothing rejects an unlisted host. A security-shaped control that does not enforce is worse than
-no control, because it gets trusted.
+**For real isolation:** Pi itself has no sandbox; run all of Pi inside an OS/container/VM boundary
+for untrusted repositories or unattended work. This setup does not ship one:
 
-Every denial is catalogued with the generated Seatbelt rules and the reproductions in
-[SANDBOX-FAILURE-MODES.md](SANDBOX-FAILURE-MODES.md), kept as the evidence for this decision.
-
-What replaced it: nothing at the OS layer. The guardrail is process — checkpoint with git before
-delegating, read the diff rather than the summary, commit small, isolate bigger jobs in a worktree, and
-treat anything that arrives from outside the repository as untrusted input. If you want enforcement
-short of a container, `@gotgenes/pi-permission-system` (**+0** tokens) gates `read`, `write`, `edit` and
-commands in-process: no OS layer, so none of the failure classes above, and it is enforcement against a
-confused model rather than a determined one.
-
-pi itself ships no sandbox at all and its documentation is explicit that real isolation has to come
-from the OS or a virtualization/container boundary. If that is what you need — untrusted
-repositories, unattended automation, generated code you will not review — run the whole of `pi`
-inside one (this repo does not ship a container path; the improvements list in the README tracks it):
-
-- **Docker**: mount only the workspace (`-v "$PWD:/workspace"`), do _not_ mount the host
-  `~/.pi/agent` (that exposes your credentials and sessions), pass the minimum credentials, and
-  restrict the network.
-- **Docker Sandboxes**: provider keys stay on the host and a proxy substitutes a sentinel on egress.
-- **Gondolin**: host `pi`, tools routed into a local Linux micro-VM (QEMU; Node ≥ 23.6).
-- **OpenShell**: policy-controlled sandbox with filesystem, process, network and credential controls.
-
-The honest summary: this setup has no OS-level guardrail, and the one it had could not be made to work
-on ordinary toolchains. The substitution is process — checkpoint before delegating, read the diff,
-commit small, isolate the rest — and if you need a line that holds against a determined agent, put a
-container under pi rather than a profile around its subprocesses. `AGENTS.md` is advice; git is the
-undo.
+- **Docker:** mount only the workspace (`-v "$PWD:/workspace"`); never mount host `~/.pi/agent`
+  (credentials and sessions). Minimize credentials and restrict network access.
+- **Docker Sandboxes:** provider keys remain on the host; a proxy substitutes a sentinel on egress.
+- **Gondolin:** host Pi with tools routed to a local Linux micro-VM (QEMU; Node ≥ 23.6).
+- **OpenShell:** policy-controlled filesystem, process, network, and credential access.
 
 ## Reproducing the numbers
 

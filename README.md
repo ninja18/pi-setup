@@ -1,13 +1,25 @@
 # pi-setup
 
-A minimal, **measured** configuration for [pi](https://pi.dev) on macOS: no plan-mode extension, no todo extension, no MCP, no subagent package.
-The main principle behind this setup is keep pi away from bloating and still add features that we use in other harnesses.
-This discipline comes from markdown files that cost nothing until they are used instead of extensions which consume context and self created extensions which need maintenance.
+A minimal, **measured** configuration for [pi](https://pi.dev) on macOS. Plans, task tracking,
+search, and delegation use files or opt-in skills instead of always-on extension tools. Global
+instructions still cost prompt tokens; the aim is to pay for what you actually use.
 
-Measured prefill: **3451 tokens** with the default `AGENTS.md` (+2147 over bare Pi), or **2987** with the lean
-variant (+1683). Task-file instructions are resident; a task file itself is read only when needed. These Pi
-0.86.1 figures come from an offline, isolated scratch run (no API key needed); see [context cost](#measured-context-cost).
-Extension comparisons in [DESIGN.md](DESIGN.md) are historical measurements on other Pi versions.
+## Measured context cost
+
+Prefill is the system prompt plus active tool schemas. Measured offline with `tools/ctx-audit.ts` on
+Pi 0.86.1 in an isolated scratch directory; tokens use Pi's `ceil(chars / 4)` estimator.
+
+| Configuration                    | Prefill   | vs bare Pi                  |
+| -------------------------------- | --------- | --------------------------- |
+| bare Pi (4 tools)                | 1304      | —                           |
+| **this setup**, default          | **3451**  | +2147                       |
+| **this setup**, `AGENTS.lean.md` | **2987**  | +1683                       |
+| with common extensions installed | **16735** | +15419 (historical bare Pi) |
+
+The last row is the ["install everything" stack](DESIGN.md#prefill-comparison): 26 active tools,
+measured on Linux with Pi 0.85.1 against a **1316**-token bare baseline. It is not this setup plus
+one extension, and its delta is not comparable to the current rows. Paths can shift totals slightly;
+task files load only when read, while global task-file instructions are included above.
 
 ## What you get
 
@@ -24,13 +36,10 @@ Extension comparisons in [DESIGN.md](DESIGN.md) are historical measurements on o
 close its pane). Its persistent mode creates a named Pi session and deliberately leaves the pane open
 for follow-up prompts in that branch.
 
-**No sandbox layer, deliberately.** `pi-sandbox` was removed after an evaluation: its failures cannot
-be fixed in its config (a process started in one tool call cannot be signalled from a later one;
-`ps`, `top`, `sudo` and GUI apps do not run; the domain "allowlist" turned out not to be enforced),
-and making real toolchains work inside it needs per-toolchain workarounds such as
-`CLANG_MODULE_CACHE_PATH` for anything that builds Objective-C modules. It was a guardrail rather than
-a boundary, and it cost more in day-to-day troubleshooting than it returned in safety. [Why](DESIGN.md#no-sandbox-layer-why-pi-sandbox-is-not-included),
-with the full catalogue in [SANDBOX-FAILURE-MODES.md](SANDBOX-FAILURE-MODES.md).
+**No sandbox layer.** `pi-sandbox` blocked cross-call process signals and GUI/TCC work, required
+toolchain workarounds, and did not enforce its domain allowlist in testing. This setup relies on
+review and git checkpoints, **not OS isolation**. See the [decision](DESIGN.md#no-sandbox-layer-why-pi-sandbox-is-not-included)
+and [failure modes](SANDBOX-FAILURE-MODES.md) for evidence; use a container/VM when isolation matters.
 
 ## Requirements
 
@@ -86,14 +95,8 @@ prompt once per repo (or run `/trust`).
 
 ### Complex feature task files
 
-`TODO.md` remains the durable project backlog; it changes only when project-level state changes, never to
-track implementation steps. After you approve a complex `/plan`, the agent creates its own
-`.pi/tasks/<YYYY-MM-DD>-<slug>-<unique-id>.md` (session ID or UUID), without overwriting an existing file.
-It records the goal and approved plan title alongside 3-7 checked outcomes. The directory is locally ignored
-through `.git/info/exclude`, not tracked `.gitignore`; ignored files still require care when staging with
-`git add -f`. On resumption, the agent lists `.pi/tasks/`, selects the file matching this goal/plan, and asks
-if ambiguous. It keeps one item in progress, records validation at step boundaries, and deletes only that
-file after final validation passes. Simple tasks create no task file.
+`TODO.md` holds the project backlog; approved complex plans use locally ignored `.pi/tasks/`
+checklists that survive resumption and are removed after validation. Simple tasks need no task file.
 
 ## Verify it works
 
@@ -145,23 +148,6 @@ SANDBOX-FAILURE-MODES.md   the pi-sandbox evaluation: every denial, with rules a
 
 Environment variables are deliberately not written into `~/.zshrc`; `env.example.sh` has the
 three worth knowing.
-
-## Measured context cost
-
-`tokens = ceil(chars/4)`, pi's estimator; "prefill" is the system prompt plus **active** tool schemas.
-Measured on Pi 0.86.1 with `tools/ctx-audit.ts` in an offline, isolated scratch directory (`--no-session`):
-
-| Configuration                    | Prefill  | vs bare Pi |
-| -------------------------------- | -------- | ---------- |
-| bare Pi (4 tools)                | 1304     | —          |
-| **this setup**, default          | **3451** | +2147      |
-| **this setup**, `AGENTS.lean.md` | **2987** | +1683      |
-
-Figures vary slightly with scratch-directory paths. The older **3338 / 2902** bundle figures in
-[DESIGN.md](DESIGN.md#current-bundle-result-pi-0861) predate these wording changes. Extension comparisons
-in [DESIGN.md](DESIGN.md#historical-extension-comparison-pi-0851) use a separate Pi 0.85.1 baseline
-(1316); `pi-herdsman` was measured separately on Pi 0.87.1. Do not add those deltas to the current totals.
-A task file's contents are not part of steady-state prefill. `AGENTS.lean.md` remains the lower-cost drop-in.
 
 ## Other good practices
 
